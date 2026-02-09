@@ -1,14 +1,25 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { getCurrentUser, logout, getShop } from '@/lib/store';
-import { User } from '@/lib/types';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
+import { seedDemoData } from '@/lib/seed-demo';
 import {
   LayoutDashboard, Package, PlusCircle, ShoppingCart, Users,
-  CreditCard, BarChart3, Settings, LogOut, Menu, X, UserCircle
+  CreditCard, BarChart3, Settings, LogOut, Menu, X, UserCircle, Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface LayoutProps { children: ReactNode; }
+
+interface Profile {
+  id: string;
+  name: string;
+  role: 'owner' | 'staff';
+}
+
+interface ShopSettings {
+  name: string;
+}
 
 const navItems = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, ownerOnly: false },
@@ -25,21 +36,68 @@ const navItems = [
 export default function Layout({ children }: LayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [user, setUser] = useState<User | null>(null);
+  const { user, loading: authLoading, signOut } = useAuth();
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [shop, setShop] = useState<ShopSettings | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const shop = getShop();
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const u = getCurrentUser();
-    if (!u) { navigate('/login'); return; }
-    setUser(u);
-  }, [navigate]);
+    if (authLoading) return;
+    
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
 
-  const handleLogout = () => { logout(); navigate('/login'); };
+    const fetchData = async () => {
+      // Fetch profile
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('id, name, role')
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-  const filtered = navItems.filter(item => !item.ownerOnly || user?.role === 'owner');
+      if (profileData) {
+        setProfile(profileData as Profile);
+      }
 
-  if (!user) return null;
+      // Fetch shop settings
+      const { data: shopData } = await supabase
+        .from('shop_settings')
+        .select('name')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (shopData) {
+        setShop(shopData);
+      }
+
+      // Seed demo data for new users
+      await seedDemoData(user.id);
+
+      setLoading(false);
+    };
+
+    fetchData();
+  }, [user, authLoading, navigate]);
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate('/auth');
+  };
+
+  const filtered = navItems.filter(item => !item.ownerOnly || profile?.role === 'owner');
+
+  if (authLoading || loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user || !profile) return null;
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -55,11 +113,11 @@ export default function Layout({ children }: LayoutProps) {
       )}>
         <div className="flex items-center gap-3 px-5 py-5 border-b border-sidebar-border">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground font-bold text-sm">
-            {shop.name.charAt(0)}
+            {shop?.name?.charAt(0) || 'S'}
           </div>
           <div className="flex-1 min-w-0">
-            <h2 className="font-semibold text-sm truncate text-sidebar-accent-foreground">{shop.name}</h2>
-            <p className="text-xs text-sidebar-muted truncate">{user.role === 'owner' ? 'Owner' : 'Sales Staff'}</p>
+            <h2 className="font-semibold text-sm truncate text-sidebar-accent-foreground">{shop?.name || 'My Shop'}</h2>
+            <p className="text-xs text-sidebar-muted truncate">{profile.role === 'owner' ? 'Owner' : 'Sales Staff'}</p>
           </div>
           <button className="md:hidden text-sidebar-muted hover:text-sidebar-foreground" onClick={() => setSidebarOpen(false)}>
             <X size={20} />
@@ -107,9 +165,9 @@ export default function Layout({ children }: LayoutProps) {
           <div className="flex-1" />
           <div className="flex items-center gap-2 text-sm">
             <div className="h-7 w-7 rounded-full bg-accent flex items-center justify-center text-accent-foreground font-semibold text-xs">
-              {user.name.charAt(0)}
+              {profile.name.charAt(0)}
             </div>
-            <span className="hidden sm:inline font-medium">{user.name}</span>
+            <span className="hidden sm:inline font-medium">{profile.name}</span>
           </div>
         </header>
         <div className="flex-1 overflow-y-auto p-4 md:p-6">
