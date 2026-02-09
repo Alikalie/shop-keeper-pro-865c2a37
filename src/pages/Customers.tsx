@@ -1,32 +1,87 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
-import { getCustomers, addCustomer } from '@/lib/store';
-import { Customer } from '@/lib/types';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Search, Users } from 'lucide-react';
+import { Plus, Search, Users, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+
+interface Customer {
+  id: string;
+  name: string;
+  phone: string;
+  address: string;
+  total_debt: number;
+}
 
 export default function Customers() {
-  const [customers, setCustomers] = useState(getCustomers());
+  const { user } = useAuth();
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name: '', phone: '', address: '' });
 
-  const filtered = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search));
+  const fetchCustomers = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('name');
+    setCustomers(data || []);
+    setLoading(false);
+  };
 
-  const handleAdd = () => {
-    if (!form.name) return;
-    const customer: Customer = {
-      id: crypto.randomUUID(), name: form.name, phone: form.phone,
-      address: form.address, totalDebt: 0, createdAt: new Date().toISOString(),
-    };
-    addCustomer(customer);
-    setCustomers(getCustomers());
+  useEffect(() => {
+    fetchCustomers();
+  }, [user]);
+
+  const filtered = customers.filter(c => 
+    c.name.toLowerCase().includes(search.toLowerCase()) || 
+    c.phone.includes(search)
+  );
+
+  const handleAdd = async () => {
+    if (!form.name || !user) return;
+    
+    setSaving(true);
+    const { error } = await supabase
+      .from('customers')
+      .insert({
+        user_id: user.id,
+        name: form.name,
+        phone: form.phone,
+        address: form.address,
+        total_debt: 0,
+      });
+
+    if (error) {
+      toast.error('Failed to add customer');
+      setSaving(false);
+      return;
+    }
+
+    await fetchCustomers();
     setDialogOpen(false);
     setForm({ name: '', phone: '', address: '' });
+    setSaving(false);
+    toast.success('Customer added');
   };
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
@@ -43,7 +98,10 @@ export default function Customers() {
                 <div><Label>Name *</Label><Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
                 <div><Label>Phone</Label><Input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /></div>
                 <div><Label>Address</Label><Input value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div>
-                <Button onClick={handleAdd} className="w-full bg-accent text-accent-foreground hover:bg-accent/90">Add Customer</Button>
+                <Button onClick={handleAdd} disabled={saving} className="w-full bg-accent text-accent-foreground hover:bg-accent/90">
+                  {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                  Add Customer
+                </Button>
               </div>
             </DialogContent>
           </Dialog>
@@ -67,10 +125,10 @@ export default function Customers() {
                   <p className="font-medium">{c.name}</p>
                   <p className="text-xs text-muted-foreground">{c.phone || 'No phone'}</p>
                 </div>
-                {c.totalDebt > 0 && (
+                {Number(c.total_debt) > 0 && (
                   <div className="text-right">
                     <p className="text-xs text-muted-foreground">Owes</p>
-                    <p className="font-semibold text-destructive">{c.totalDebt.toLocaleString()}</p>
+                    <p className="font-semibold text-destructive">Le {Number(c.total_debt).toLocaleString()}</p>
                   </div>
                 )}
               </div>

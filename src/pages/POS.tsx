@@ -1,36 +1,104 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
-import { getProducts, getCustomers, addSale, addLoan, addCustomer, generateReceiptId, getCurrentUser } from '@/lib/store';
-import { CartItem, Sale, SaleItem, Loan, Customer } from '@/lib/types';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { ShoppingCart, Plus, Minus, Trash2, Printer, Search } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, Printer, Search, Loader2 } from 'lucide-react';
 import Receipt from '@/components/Receipt';
 
+interface Product {
+  id: string;
+  name: string;
+  selling_price: number;
+  quantity: number;
+}
+
+interface CartItem {
+  product: Product;
+  quantity: number;
+}
+
+interface Customer {
+  id: string;
+  name: string;
+}
+
+interface SaleData {
+  id: string;
+  receipt_id: string;
+  customer_name: string;
+  total: number;
+  paid: number;
+  balance: number;
+  payment_method: string;
+  sold_by_name: string;
+  created_at: string;
+  items: { productName: string; quantity: number; price: number; total: number }[];
+}
+
 export default function POS() {
-  const user = getCurrentUser();
-  const [products] = useState(getProducts());
+  const { user } = useAuth();
+  const [profile, setProfile] = useState<{ id: string; name: string } | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState('');
   const [customerId, setCustomerId] = useState('walk-in');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'loan'>('cash');
   const [paidAmount, setPaidAmount] = useState('');
   const [showReceipt, setShowReceipt] = useState(false);
-  const [lastSale, setLastSale] = useState<Sale | null>(null);
+  const [lastSale, setLastSale] = useState<SaleData | null>(null);
   const [showNewCustomer, setShowNewCustomer] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [newCust, setNewCust] = useState({ name: '', phone: '', address: '' });
 
-  const customers = useMemo(() => getCustomers(), [showNewCustomer]);
-  const filtered = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) && p.quantity > 0);
-  const total = cart.reduce((sum, item) => sum + item.product.sellingPrice * item.quantity, 0);
+  useEffect(() => {
+    if (!user) return;
+    
+    const fetchData = async () => {
+      // Get profile
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('id, name')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (profileData) setProfile(profileData);
+
+      // Get products
+      const { data: productsData } = await supabase
+        .from('products')
+        .select('id, name, selling_price, quantity')
+        .eq('user_id', user.id)
+        .gt('quantity', 0)
+        .order('name');
+      setProducts(productsData || []);
+
+      // Get customers
+      const { data: customersData } = await supabase
+        .from('customers')
+        .select('id, name')
+        .eq('user_id', user.id)
+        .order('name');
+      setCustomers(customersData || []);
+
+      setLoading(false);
+    };
+
+    fetchData();
+  }, [user]);
+
+  const filtered = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
+  const total = cart.reduce((sum, item) => sum + item.product.selling_price * item.quantity, 0);
   const paid = paymentMethod === 'cash' ? total : Number(paidAmount) || 0;
   const balance = total - paid;
 
-  const addToCart = (product: typeof products[0]) => {
+  const addToCart = (product: Product) => {
     setCart(prev => {
       const existing = prev.find(c => c.product.id === product.id);
       if (existing) {
@@ -53,57 +121,186 @@ export default function POS() {
 
   const removeFromCart = (productId: string) => setCart(prev => prev.filter(c => c.product.id !== productId));
 
-  const handleCheckout = () => {
-    if (cart.length === 0) { toast.error('Cart is empty'); return; }
-    if (paymentMethod === 'loan' && customerId === 'walk-in') { toast.error('Select a customer for loan'); return; }
-
-    const receiptId = generateReceiptId();
-    const items: SaleItem[] = cart.map(c => ({
-      productId: c.product.id, productName: c.product.name,
-      quantity: c.quantity, price: c.product.sellingPrice, total: c.product.sellingPrice * c.quantity,
-    }));
-
-    const customerName = customerId === 'walk-in' ? 'Walk-in Customer' : customers.find(c => c.id === customerId)?.name || 'Unknown';
-
-    const sale: Sale = {
-      id: crypto.randomUUID(), receiptId, items, customerId, customerName,
-      total, paid, balance: Math.max(0, balance),
-      paymentMethod, soldBy: user?.id || '', soldByName: user?.name || '',
-      date: new Date().toISOString().split('T')[0], timestamp: new Date().toISOString(),
-    };
-
-    addSale(sale);
-
-    if (paymentMethod === 'loan' && balance > 0) {
-      const loan: Loan = {
-        id: crypto.randomUUID(), saleId: sale.id, customerId, customerName,
-        totalAmount: balance, paidAmount: 0, balance, status: 'unpaid', payments: [],
-        date: new Date().toISOString(),
-      };
-      addLoan(loan);
-    }
-
-    setLastSale(sale);
-    setShowReceipt(true);
-    setCart([]);
-    setPaidAmount('');
-    setCustomerId('walk-in');
-    setPaymentMethod('cash');
-    toast.success('Sale completed!');
+  const generateReceiptId = async () => {
+    const { data: shopData } = await supabase
+      .from('shop_settings')
+      .select('name')
+      .eq('user_id', user!.id)
+      .maybeSingle();
+    
+    const prefix = (shopData?.name || 'SHOP').split(' ')[0]?.toUpperCase().slice(0, 4) || 'SHOP';
+    const date = new Date();
+    const dateStr = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+    
+    // Get today's sales count
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const { count } = await supabase
+      .from('sales')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user!.id)
+      .gte('created_at', today.toISOString());
+    
+    const num = String((count || 0) + 1).padStart(5, '0');
+    return `${prefix}-${dateStr}-${num}`;
   };
 
-  const handleAddCustomer = () => {
-    if (!newCust.name) return;
-    const customer: Customer = {
-      id: crypto.randomUUID(), name: newCust.name, phone: newCust.phone,
-      address: newCust.address, totalDebt: 0, createdAt: new Date().toISOString(),
-    };
-    addCustomer(customer);
-    setCustomerId(customer.id);
+  const handleCheckout = async () => {
+    if (cart.length === 0) { toast.error('Cart is empty'); return; }
+    if (paymentMethod === 'loan' && customerId === 'walk-in') { toast.error('Select a customer for loan'); return; }
+    if (!user || !profile) return;
+
+    setSaving(true);
+    
+    try {
+      const receiptId = await generateReceiptId();
+      const customerName = customerId === 'walk-in' ? 'Walk-in Customer' : customers.find(c => c.id === customerId)?.name || 'Unknown';
+
+      // Create sale
+      const { data: saleData, error: saleError } = await supabase
+        .from('sales')
+        .insert({
+          user_id: user.id,
+          receipt_id: receiptId,
+          customer_id: customerId === 'walk-in' ? null : customerId,
+          customer_name: customerName,
+          total,
+          paid,
+          balance: Math.max(0, balance),
+          payment_method: paymentMethod,
+          sold_by: profile.id,
+          sold_by_name: profile.name,
+        })
+        .select()
+        .single();
+
+      if (saleError) throw saleError;
+
+      // Create sale items
+      const saleItems = cart.map(c => ({
+        sale_id: saleData.id,
+        product_id: c.product.id,
+        product_name: c.product.name,
+        quantity: c.quantity,
+        price: c.product.selling_price,
+        total: c.product.selling_price * c.quantity,
+      }));
+
+      await supabase.from('sale_items').insert(saleItems);
+
+      // Update product quantities
+      for (const item of cart) {
+        await supabase
+          .from('products')
+          .update({ quantity: item.product.quantity - item.quantity })
+          .eq('id', item.product.id);
+      }
+
+      // Create loan if needed
+      if (paymentMethod === 'loan' && balance > 0) {
+        await supabase.from('loans').insert({
+          user_id: user.id,
+          sale_id: saleData.id,
+          customer_id: customerId,
+          customer_name: customerName,
+          total_amount: balance,
+          paid_amount: 0,
+          balance: balance,
+          status: 'unpaid',
+        });
+
+        // Update customer debt
+        const { data: customerData } = await supabase
+          .from('customers')
+          .select('total_debt')
+          .eq('id', customerId)
+          .single();
+        
+        if (customerData) {
+          await supabase
+            .from('customers')
+            .update({ total_debt: Number(customerData.total_debt) + balance })
+            .eq('id', customerId);
+        }
+      }
+
+      setLastSale({
+        id: saleData.id,
+        receipt_id: receiptId,
+        customer_name: customerName,
+        total,
+        paid,
+        balance: Math.max(0, balance),
+        payment_method: paymentMethod,
+        sold_by_name: profile.name,
+        created_at: new Date().toISOString(),
+        items: cart.map(c => ({
+          productName: c.product.name,
+          quantity: c.quantity,
+          price: c.product.selling_price,
+          total: c.product.selling_price * c.quantity,
+        })),
+      });
+
+      // Refresh products
+      const { data: newProducts } = await supabase
+        .from('products')
+        .select('id, name, selling_price, quantity')
+        .eq('user_id', user.id)
+        .gt('quantity', 0)
+        .order('name');
+      setProducts(newProducts || []);
+
+      setShowReceipt(true);
+      setCart([]);
+      setPaidAmount('');
+      setCustomerId('walk-in');
+      setPaymentMethod('cash');
+      toast.success('Sale completed!');
+    } catch (error) {
+      console.error('Checkout error:', error);
+      toast.error('Failed to complete sale');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddCustomer = async () => {
+    if (!newCust.name || !user) return;
+    
+    const { data, error } = await supabase
+      .from('customers')
+      .insert({
+        user_id: user.id,
+        name: newCust.name,
+        phone: newCust.phone,
+        address: newCust.address,
+        total_debt: 0,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      toast.error('Failed to add customer');
+      return;
+    }
+
+    setCustomers(prev => [...prev, { id: data.id, name: data.name }]);
+    setCustomerId(data.id);
     setShowNewCustomer(false);
     setNewCust({ name: '', phone: '', address: '' });
     toast.success('Customer added');
   };
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
@@ -123,7 +320,7 @@ export default function POS() {
                   className="text-left rounded-lg border bg-card p-3 hover:border-accent/50 transition-colors">
                   <p className="font-medium text-sm truncate">{p.name}</p>
                   <p className="text-xs text-muted-foreground">{p.quantity} in stock</p>
-                  <p className="font-semibold text-sm mt-1">{p.sellingPrice.toLocaleString()}</p>
+                  <p className="font-semibold text-sm mt-1">Le {p.selling_price.toLocaleString()}</p>
                 </button>
               ))}
               {filtered.length === 0 && <p className="col-span-2 text-center py-8 text-muted-foreground text-sm">No products available</p>}
@@ -145,7 +342,7 @@ export default function POS() {
                   <div key={item.product.id} className="flex items-center gap-2 rounded-lg bg-secondary/50 p-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{item.product.name}</p>
-                      <p className="text-xs text-muted-foreground">{item.product.sellingPrice} × {item.quantity}</p>
+                      <p className="text-xs text-muted-foreground">{item.product.selling_price} × {item.quantity}</p>
                     </div>
                     <div className="flex items-center gap-1">
                       <button onClick={() => updateQty(item.product.id, -1)} className="h-6 w-6 rounded bg-secondary flex items-center justify-center"><Minus size={12} /></button>
@@ -153,7 +350,7 @@ export default function POS() {
                       <button onClick={() => updateQty(item.product.id, 1)} className="h-6 w-6 rounded bg-secondary flex items-center justify-center"><Plus size={12} /></button>
                       <button onClick={() => removeFromCart(item.product.id)} className="h-6 w-6 rounded bg-destructive/10 text-destructive flex items-center justify-center ml-1"><Trash2 size={12} /></button>
                     </div>
-                    <p className="text-sm font-semibold w-16 text-right">{(item.product.sellingPrice * item.quantity).toLocaleString()}</p>
+                    <p className="text-sm font-semibold w-16 text-right">{(item.product.selling_price * item.quantity).toLocaleString()}</p>
                   </div>
                 ))}
               </div>
@@ -191,16 +388,17 @@ export default function POS() {
 
               <div className="flex justify-between text-lg font-bold border-t pt-2">
                 <span>TOTAL</span>
-                <span>{total.toLocaleString()}</span>
+                <span>Le {total.toLocaleString()}</span>
               </div>
               {paymentMethod === 'loan' && balance > 0 && (
                 <div className="flex justify-between text-sm text-destructive">
                   <span>Balance (Loan)</span>
-                  <span>{balance.toLocaleString()}</span>
+                  <span>Le {balance.toLocaleString()}</span>
                 </div>
               )}
 
-              <Button onClick={handleCheckout} className="w-full bg-accent text-accent-foreground hover:bg-accent/90" disabled={cart.length === 0}>
+              <Button onClick={handleCheckout} className="w-full bg-accent text-accent-foreground hover:bg-accent/90" disabled={cart.length === 0 || saving}>
+                {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                 Complete Sale
               </Button>
             </div>

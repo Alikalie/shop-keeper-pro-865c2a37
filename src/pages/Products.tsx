@@ -1,49 +1,127 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
-import { getProducts, addProduct, updateProduct } from '@/lib/store';
-import { Product } from '@/lib/types';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Search, Package } from 'lucide-react';
+import { Plus, Search, Package, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+
+interface Product {
+  id: string;
+  name: string;
+  category: string;
+  buying_price: number;
+  selling_price: number;
+  quantity: number;
+  low_stock_level: number;
+}
 
 export default function Products() {
-  const [products, setProducts] = useState(getProducts());
+  const { user } = useAuth();
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState({ name: '', category: '', buyingPrice: '', sellingPrice: '', quantity: '', lowStockLevel: '5' });
+
+  const fetchProducts = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('products')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('name');
+    setProducts(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchProducts();
+  }, [user]);
 
   const filtered = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
 
   const resetForm = () => setForm({ name: '', category: '', buyingPrice: '', sellingPrice: '', quantity: '', lowStockLevel: '5' });
 
-  const handleSave = () => {
-    if (!form.name || !form.sellingPrice) return;
+  const handleSave = async () => {
+    if (!form.name || !form.sellingPrice || !user) return;
+    
+    setSaving(true);
+    
     if (editing) {
-      const updated = { ...editing, name: form.name, category: form.category, buyingPrice: Number(form.buyingPrice), sellingPrice: Number(form.sellingPrice), quantity: Number(form.quantity), lowStockLevel: Number(form.lowStockLevel) };
-      updateProduct(updated);
+      const { error } = await supabase
+        .from('products')
+        .update({
+          name: form.name,
+          category: form.category || 'General',
+          buying_price: Number(form.buyingPrice) || 0,
+          selling_price: Number(form.sellingPrice),
+          quantity: Number(form.quantity) || 0,
+          low_stock_level: Number(form.lowStockLevel) || 5,
+        })
+        .eq('id', editing.id);
+      
+      if (error) {
+        toast.error('Failed to update product');
+        setSaving(false);
+        return;
+      }
+      toast.success('Product updated');
     } else {
-      const product: Product = {
-        id: crypto.randomUUID(), name: form.name, category: form.category,
-        buyingPrice: Number(form.buyingPrice), sellingPrice: Number(form.sellingPrice),
-        quantity: Number(form.quantity), lowStockLevel: Number(form.lowStockLevel),
-        createdAt: new Date().toISOString(),
-      };
-      addProduct(product);
+      const { error } = await supabase
+        .from('products')
+        .insert({
+          user_id: user.id,
+          name: form.name,
+          category: form.category || 'General',
+          buying_price: Number(form.buyingPrice) || 0,
+          selling_price: Number(form.sellingPrice),
+          quantity: Number(form.quantity) || 0,
+          low_stock_level: Number(form.lowStockLevel) || 5,
+        });
+      
+      if (error) {
+        toast.error('Failed to add product');
+        setSaving(false);
+        return;
+      }
+      toast.success('Product added');
     }
-    setProducts(getProducts());
+    
+    await fetchProducts();
     setDialogOpen(false);
     setEditing(null);
     resetForm();
+    setSaving(false);
   };
 
   const openEdit = (p: Product) => {
     setEditing(p);
-    setForm({ name: p.name, category: p.category, buyingPrice: String(p.buyingPrice), sellingPrice: String(p.sellingPrice), quantity: String(p.quantity), lowStockLevel: String(p.lowStockLevel) });
+    setForm({
+      name: p.name,
+      category: p.category,
+      buyingPrice: String(p.buying_price),
+      sellingPrice: String(p.selling_price),
+      quantity: String(p.quantity),
+      lowStockLevel: String(p.low_stock_level),
+    });
     setDialogOpen(true);
   };
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
@@ -69,7 +147,8 @@ export default function Products() {
                   <div><Label>Quantity</Label><Input type="number" value={form.quantity} onChange={e => setForm({...form, quantity: e.target.value})} /></div>
                   <div><Label>Low Stock Level</Label><Input type="number" value={form.lowStockLevel} onChange={e => setForm({...form, lowStockLevel: e.target.value})} /></div>
                 </div>
-                <Button onClick={handleSave} className="w-full bg-accent text-accent-foreground hover:bg-accent/90">
+                <Button onClick={handleSave} disabled={saving} className="w-full bg-accent text-accent-foreground hover:bg-accent/90">
+                  {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                   {editing ? 'Update' : 'Add'} Product
                 </Button>
               </div>
@@ -97,8 +176,8 @@ export default function Products() {
                     {p.category && <p className="text-xs text-muted-foreground">{p.category}</p>}
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold">{p.sellingPrice.toLocaleString()}</p>
-                    <p className={`text-xs ${p.quantity <= p.lowStockLevel ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
+                    <p className="font-semibold">Le {p.selling_price.toLocaleString()}</p>
+                    <p className={`text-xs ${p.quantity <= p.low_stock_level ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
                       {p.quantity} in stock
                     </p>
                   </div>
