@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { seedDemoData } from '@/lib/seed-demo';
 import {
   LayoutDashboard, Package, PlusCircle, ShoppingCart, Users,
-  CreditCard, BarChart3, Settings, LogOut, Menu, X, UserCircle, Loader2
+  CreditCard, BarChart3, Settings, LogOut, Menu, X, UserCircle, Loader2, Shield
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -22,15 +22,16 @@ interface ShopSettings {
 }
 
 const navItems = [
-  { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, ownerOnly: false },
-  { path: '/products', label: 'Products', icon: Package, ownerOnly: false },
-  { path: '/add-stock', label: 'Add Stock', icon: PlusCircle, ownerOnly: true },
-  { path: '/pos', label: 'Sell (POS)', icon: ShoppingCart, ownerOnly: false },
-  { path: '/customers', label: 'Customers', icon: Users, ownerOnly: false },
-  { path: '/loans', label: 'Loans / Credit', icon: CreditCard, ownerOnly: false },
-  { path: '/reports', label: 'Daily Reports', icon: BarChart3, ownerOnly: true },
-  { path: '/staff', label: 'Staff', icon: UserCircle, ownerOnly: true },
-  { path: '/settings', label: 'Shop Settings', icon: Settings, ownerOnly: true },
+  { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, ownerOnly: false, adminOnly: false },
+  { path: '/products', label: 'Products', icon: Package, ownerOnly: false, adminOnly: false },
+  { path: '/add-stock', label: 'Add Stock', icon: PlusCircle, ownerOnly: true, adminOnly: false },
+  { path: '/pos', label: 'Sell (POS)', icon: ShoppingCart, ownerOnly: false, adminOnly: false },
+  { path: '/customers', label: 'Customers', icon: Users, ownerOnly: false, adminOnly: false },
+  { path: '/loans', label: 'Loans / Credit', icon: CreditCard, ownerOnly: false, adminOnly: false },
+  { path: '/reports', label: 'Daily Reports', icon: BarChart3, ownerOnly: true, adminOnly: false },
+  { path: '/staff', label: 'Staff', icon: UserCircle, ownerOnly: true, adminOnly: false },
+  { path: '/settings', label: 'Shop Settings', icon: Settings, ownerOnly: true, adminOnly: false },
+  { path: '/admin', label: 'Admin CMS', icon: Shield, ownerOnly: false, adminOnly: true },
 ];
 
 export default function Layout({ children }: LayoutProps) {
@@ -41,6 +42,7 @@ export default function Layout({ children }: LayoutProps) {
   const [shop, setShop] = useState<ShopSettings | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -73,6 +75,15 @@ export default function Layout({ children }: LayoutProps) {
         setShop(shopData);
       }
 
+      // Check super admin role
+      const { data: roleData } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .eq('role', 'super_admin')
+        .maybeSingle();
+      setIsSuperAdmin(!!roleData);
+
       // Seed demo data for new users
       await seedDemoData(user.id);
 
@@ -87,7 +98,11 @@ export default function Layout({ children }: LayoutProps) {
     navigate('/auth');
   };
 
-  const filtered = navItems.filter(item => !item.ownerOnly || profile?.role === 'owner');
+  const filtered = navItems.filter(item => {
+    if (item.adminOnly) return isSuperAdmin;
+    if (item.ownerOnly) return profile?.role === 'owner';
+    return true;
+  });
 
   if (authLoading || loading) {
     return (
