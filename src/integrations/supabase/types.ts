@@ -179,6 +179,68 @@ export type Database = {
           },
         ]
       }
+      org_members: {
+        Row: {
+          created_at: string
+          id: string
+          org_id: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          org_id: string
+          role?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          org_id?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "org_members_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizations: {
+        Row: {
+          account_type: string
+          created_at: string
+          id: string
+          max_staff: number
+          name: string
+          owner_id: string
+          updated_at: string
+        }
+        Insert: {
+          account_type?: string
+          created_at?: string
+          id?: string
+          max_staff?: number
+          name: string
+          owner_id: string
+          updated_at?: string
+        }
+        Update: {
+          account_type?: string
+          created_at?: string
+          id?: string
+          max_staff?: number
+          name?: string
+          owner_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       products: {
         Row: {
           buying_price: number
@@ -220,33 +282,47 @@ export type Database = {
       }
       profiles: {
         Row: {
+          account_type: string
           created_at: string
           id: string
           name: string
+          org_id: string | null
           pin: string | null
           role: string
           updated_at: string
           user_id: string
         }
         Insert: {
+          account_type?: string
           created_at?: string
           id?: string
           name: string
+          org_id?: string | null
           pin?: string | null
           role?: string
           updated_at?: string
           user_id: string
         }
         Update: {
+          account_type?: string
           created_at?: string
           id?: string
           name?: string
+          org_id?: string | null
           pin?: string | null
           role?: string
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       sale_items: {
         Row: {

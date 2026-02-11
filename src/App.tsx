@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import Landing from "./pages/Landing";
 import Auth from "./pages/Auth";
+import AdminAuth from "./pages/AdminAuth";
 import Dashboard from "./pages/Dashboard";
 import Products from "./pages/Products";
 import AddStock from "./pages/AddStock";
@@ -30,6 +31,8 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/auth" element={<Auth />} />
+            <Route path="/admin" element={<AdminAuth />} />
+            <Route path="/admin-cms" element={<AdminCMS />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/products" element={<Products />} />
             <Route path="/add-stock" element={<AddStock />} />
@@ -39,7 +42,6 @@ const App = () => (
             <Route path="/reports" element={<DailyReports />} />
             <Route path="/staff" element={<StaffManagement />} />
             <Route path="/settings" element={<ShopSettings />} />
-            <Route path="/admin" element={<AdminCMS />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
