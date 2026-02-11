@@ -2,7 +2,7 @@ import { ReactNode, useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
-import { seedDemoData } from '@/lib/seed-demo';
+
 import {
   LayoutDashboard, Package, PlusCircle, ShoppingCart, Users,
   CreditCard, BarChart3, Settings, LogOut, Menu, X, UserCircle, Loader2, Shield
@@ -31,7 +31,7 @@ const navItems = [
   { path: '/reports', label: 'Daily Reports', icon: BarChart3, ownerOnly: true, adminOnly: false },
   { path: '/staff', label: 'Staff', icon: UserCircle, ownerOnly: true, adminOnly: false },
   { path: '/settings', label: 'Shop Settings', icon: Settings, ownerOnly: true, adminOnly: false },
-  { path: '/admin', label: 'Admin CMS', icon: Shield, ownerOnly: false, adminOnly: true },
+  { path: '/admin-cms', label: 'Admin CMS', icon: Shield, ownerOnly: false, adminOnly: true },
 ];
 
 export default function Layout({ children }: LayoutProps) {
@@ -84,8 +84,7 @@ export default function Layout({ children }: LayoutProps) {
         .maybeSingle();
       setIsSuperAdmin(!!roleData);
 
-      // Seed demo data for new users
-      await seedDemoData(user.id);
+      // Data loading complete
 
       setLoading(false);
     };
