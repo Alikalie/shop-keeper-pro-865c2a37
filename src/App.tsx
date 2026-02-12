@@ -16,6 +16,7 @@ import Loans from "./pages/Loans";
 import DailyReports from "./pages/DailyReports";
 import StaffManagement from "./pages/StaffManagement";
 import ShopSettings from "./pages/ShopSettings";
+import SalesHistory from "./pages/SalesHistory";
 import NotFound from "./pages/NotFound";
 import AdminCMS from "./pages/AdminCMS";
 
@@ -40,6 +41,7 @@ const App = () => (
             <Route path="/customers" element={<Customers />} />
             <Route path="/loans" element={<Loans />} />
             <Route path="/reports" element={<DailyReports />} />
+            <Route path="/sales-history" element={<SalesHistory />} />
             <Route path="/staff" element={<StaffManagement />} />
             <Route path="/settings" element={<ShopSettings />} />
             <Route path="*" element={<NotFound />} />

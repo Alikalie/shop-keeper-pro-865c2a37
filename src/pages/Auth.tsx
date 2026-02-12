@@ -137,7 +137,7 @@ export default function Auth() {
     }
 
     setLoading(false);
-    toast.success('Check your email to confirm your account!');
+    toast.success('Account created! You can now sign in.');
     setMode('login');
   };
 

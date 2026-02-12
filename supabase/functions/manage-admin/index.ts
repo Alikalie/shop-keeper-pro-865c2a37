@@ -6,7 +6,6 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// Default admin credentials
 const DEFAULT_ADMIN_EMAIL = "admin@dukasmart.app";
 const DEFAULT_ADMIN_PASSWORD = "Admin";
 
@@ -27,14 +26,11 @@ Deno.serve(async (req) => {
     if (action === "admin_login") {
       const { username, password } = body;
       
-      // Check default credentials first
       if (username === "Admin" && password === "Admin") {
-        // Ensure the default admin account exists
         const { data: existingUsers } = await adminClient.auth.admin.listUsers();
         let adminUser = existingUsers?.users?.find((u: any) => u.email === DEFAULT_ADMIN_EMAIL);
         
         if (!adminUser) {
-          // Create the default admin user
           const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
             email: DEFAULT_ADMIN_EMAIL,
             password: DEFAULT_ADMIN_PASSWORD,
@@ -45,7 +41,6 @@ Deno.serve(async (req) => {
           adminUser = newUser.user;
         }
 
-        // Ensure super_admin role exists
         const { data: existingRole } = await adminClient
           .from("user_roles")
           .select("id")
@@ -60,7 +55,6 @@ Deno.serve(async (req) => {
           });
         }
 
-        // Sign in as admin to get a session token
         const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
         const signInClient = createClient(supabaseUrl, anonKey);
         const { data: signInData, error: signInError } = await signInClient.auth.signInWithPassword({
@@ -80,6 +74,275 @@ Deno.serve(async (req) => {
 
       return new Response(JSON.stringify({ error: "Invalid admin credentials" }), {
         status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Create staff - requires authenticated owner
+    if (action === "create_staff") {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: { user }, error: userError } = await userClient.auth.getUser();
+      if (userError || !user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { staffName, staffEmail, staffPassword, staffRole } = body;
+
+      if (!staffName || !staffEmail || !staffPassword) {
+        return new Response(JSON.stringify({ error: "Name, email, and password are required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Check caller is owner
+      const { data: callerProfile } = await adminClient
+        .from("profiles")
+        .select("role, org_id, account_type")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (!callerProfile || callerProfile.role !== "owner") {
+        return new Response(JSON.stringify({ error: "Only owners can add staff" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Check staff limits
+      if (callerProfile.org_id) {
+        const { data: org } = await adminClient
+          .from("organizations")
+          .select("max_staff, account_type")
+          .eq("id", callerProfile.org_id)
+          .maybeSingle();
+
+        if (org) {
+          const { count } = await adminClient
+            .from("org_members")
+            .select("*", { count: "exact", head: true })
+            .eq("org_id", callerProfile.org_id);
+
+          if ((count ?? 0) >= org.max_staff) {
+            const limit = org.account_type === "personal" ? 3 : org.max_staff;
+            return new Response(JSON.stringify({ 
+              error: `Staff limit reached (${limit}). ${org.account_type === 'personal' ? 'Upgrade to Organization to add more.' : ''}` 
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        }
+      }
+
+      // Create the staff user account
+      const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
+        email: staffEmail,
+        password: staffPassword,
+        email_confirm: true,
+        user_metadata: { name: staffName },
+      });
+
+      if (createError) {
+        if (createError.message?.includes("already been registered")) {
+          return new Response(JSON.stringify({ error: "A user with this email already exists" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        throw createError;
+      }
+
+      // Update the auto-created profile
+      await adminClient
+        .from("profiles")
+        .update({ 
+          role: staffRole || "staff",
+          org_id: callerProfile.org_id,
+          account_type: callerProfile.account_type,
+        })
+        .eq("user_id", newUser.user.id);
+
+      // Add to org_members if org exists
+      if (callerProfile.org_id) {
+        await adminClient.from("org_members").insert({
+          org_id: callerProfile.org_id,
+          user_id: newUser.user.id,
+          role: staffRole || "staff",
+        });
+      }
+
+      // Copy shop settings for the staff (so they share the same shop context)
+      const { data: ownerShop } = await adminClient
+        .from("shop_settings")
+        .select("name, address, phone, footer_message, logo_url")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (ownerShop) {
+        await adminClient
+          .from("shop_settings")
+          .update({
+            name: ownerShop.name,
+            address: ownerShop.address,
+            phone: ownerShop.phone,
+            footer_message: ownerShop.footer_message,
+            logo_url: ownerShop.logo_url,
+          })
+          .eq("user_id", newUser.user.id);
+      }
+
+      return new Response(JSON.stringify({ 
+        success: true, 
+        staff: { id: newUser.user.id, name: staffName, email: staffEmail, role: staffRole || "staff" } 
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // List staff for an owner
+    if (action === "list_staff") {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: { user }, error: userError } = await userClient.auth.getUser();
+      if (userError || !user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Get caller's org
+      const { data: callerProfile } = await adminClient
+        .from("profiles")
+        .select("org_id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (!callerProfile?.org_id) {
+        // No org - just return own profile
+        const { data: ownProfile } = await adminClient
+          .from("profiles")
+          .select("id, user_id, name, role, created_at")
+          .eq("user_id", user.id);
+        
+        return new Response(JSON.stringify({ staff: ownProfile || [] }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Get all org members' profiles
+      const { data: members } = await adminClient
+        .from("org_members")
+        .select("user_id, role")
+        .eq("org_id", callerProfile.org_id);
+
+      const userIds = (members || []).map(m => m.user_id);
+      
+      const { data: profiles } = await adminClient
+        .from("profiles")
+        .select("id, user_id, name, role, created_at")
+        .in("user_id", userIds);
+
+      // Get emails from auth
+      const { data: { users } } = await adminClient.auth.admin.listUsers();
+      
+      const staffList = (profiles || []).map(p => {
+        const authUser = users.find((u: any) => u.id === p.user_id);
+        return {
+          ...p,
+          email: authUser?.email || "unknown",
+        };
+      });
+
+      return new Response(JSON.stringify({ staff: staffList }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Delete staff
+    if (action === "delete_staff") {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: { user }, error: userError } = await userClient.auth.getUser();
+      if (userError || !user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { staffUserId } = body;
+      if (!staffUserId) {
+        return new Response(JSON.stringify({ error: "Staff user ID required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Cannot delete yourself
+      if (staffUserId === user.id) {
+        return new Response(JSON.stringify({ error: "Cannot remove yourself" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Check caller is owner
+      const { data: callerProfile } = await adminClient
+        .from("profiles")
+        .select("role, org_id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (!callerProfile || callerProfile.role !== "owner") {
+        return new Response(JSON.stringify({ error: "Only owners can remove staff" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Remove from org_members
+      if (callerProfile.org_id) {
+        await adminClient
+          .from("org_members")
+          .delete()
+          .eq("org_id", callerProfile.org_id)
+          .eq("user_id", staffUserId);
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -111,7 +374,6 @@ Deno.serve(async (req) => {
       .eq("role", "super_admin")
       .maybeSingle();
 
-    // Bootstrap: if no super_admins exist, the first caller becomes one
     if (action === "bootstrap") {
       const { count } = await adminClient
         .from("user_roles")
@@ -241,6 +503,47 @@ Deno.serve(async (req) => {
       });
 
       return new Response(JSON.stringify({ admins }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // List all registered users (for admin)
+    if (action === "list_users") {
+      const { data: { users } } = await adminClient.auth.admin.listUsers();
+      
+      const userList = users.map((u: any) => ({
+        id: u.id,
+        email: u.email,
+        created_at: u.created_at,
+        name: u.user_metadata?.name || u.email,
+      }));
+
+      return new Response(JSON.stringify({ users: userList }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Delete user (admin only)
+    if (action === "delete_user") {
+      const { userId } = body;
+      if (!userId) {
+        return new Response(JSON.stringify({ error: "User ID required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (userId === user.id) {
+        return new Response(JSON.stringify({ error: "Cannot delete yourself" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId);
+      if (deleteError) throw deleteError;
+
+      return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
