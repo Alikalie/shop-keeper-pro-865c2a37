@@ -9,13 +9,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Plus, UserCircle, Loader2 } from 'lucide-react';
+import { Plus, UserCircle, Loader2, Trash2, Mail, Lock, User } from 'lucide-react';
 
-interface Profile {
+interface StaffMember {
   id: string;
   user_id: string;
   name: string;
   role: string;
+  email?: string;
+  created_at: string;
 }
 
 interface Sale {
@@ -25,67 +27,96 @@ interface Sale {
 
 export default function StaffManagement() {
   const { user } = useAuth();
-  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [staff, setStaff] = useState<StaffMember[]>([]);
   const [todaySales, setTodaySales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'staff' });
 
+  const fetchData = async () => {
+    if (!user) return;
+
+    // Get staff via edge function
+    const { data, error } = await supabase.functions.invoke('manage-admin', {
+      body: { action: 'list_staff' },
+    });
+
+    if (!error && data?.staff) {
+      setStaff(data.staff);
+    }
+
+    // Get today's sales
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const { data: salesData } = await supabase
+      .from('sales')
+      .select('sold_by, total')
+      .eq('user_id', user.id)
+      .gte('created_at', today.toISOString())
+      .lt('created_at', tomorrow.toISOString());
+
+    setTodaySales(salesData || []);
+    setLoading(false);
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      if (!user) return;
-
-      // Get all profiles (only owner can access this page)
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at');
-
-      // Filter to only show profiles from same account/shop
-      // For now, we show the current user's profile
-      const { data: currentProfile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      
-      setProfiles(currentProfile ? [currentProfile] : []);
-
-      // Get today's sales
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-
-      const { data: salesData } = await supabase
-        .from('sales')
-        .select('sold_by, total')
-        .eq('user_id', user.id)
-        .gte('created_at', today.toISOString())
-        .lt('created_at', tomorrow.toISOString());
-
-      setTodaySales(salesData || []);
-      setLoading(false);
-    };
-
     fetchData();
   }, [user]);
 
   const handleAdd = async () => {
     if (!form.name || !form.email || !form.password) { 
-      toast.error('Fill all fields'); 
+      toast.error('Fill all required fields'); 
       return; 
+    }
+
+    if (form.password.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
     }
 
     setSaving(true);
     
-    // For now, show info that staff management requires inviting users via email
-    toast.info('Staff accounts require email verification. Send an invite email to your staff.');
-    
+    const { data, error } = await supabase.functions.invoke('manage-admin', {
+      body: { 
+        action: 'create_staff',
+        staffName: form.name,
+        staffEmail: form.email,
+        staffPassword: form.password,
+        staffRole: form.role,
+      },
+    });
+
+    if (error || data?.error) {
+      toast.error(data?.error || 'Failed to add staff');
+      setSaving(false);
+      return;
+    }
+
+    toast.success(`Staff "${form.name}" added! They can login with: ${form.email}`);
     setDialogOpen(false);
     setForm({ name: '', email: '', password: '', role: 'staff' });
     setSaving(false);
+    await fetchData();
+  };
+
+  const handleDelete = async (staffUserId: string, staffName: string) => {
+    if (!confirm(`Remove ${staffName} from your team?`)) return;
+
+    const { data, error } = await supabase.functions.invoke('manage-admin', {
+      body: { action: 'delete_staff', staffUserId },
+    });
+
+    if (error || data?.error) {
+      toast.error(data?.error || 'Failed to remove staff');
+      return;
+    }
+
+    toast.success('Staff removed');
+    await fetchData();
   };
 
   if (loading) {
@@ -105,14 +136,32 @@ export default function StaffManagement() {
           <h1 className="text-2xl font-bold">Staff Management</h1>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-accent text-accent-foreground hover:bg-accent/90"><Plus size={16} className="mr-1" /> Add</Button>
+              <Button className="bg-accent text-accent-foreground hover:bg-accent/90"><Plus size={16} className="mr-1" /> Add Staff</Button>
             </DialogTrigger>
             <DialogContent>
-              <DialogHeader><DialogTitle>Add Staff</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle>Add Staff Member</DialogTitle></DialogHeader>
               <div className="space-y-3">
-                <div><Label>Name *</Label><Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
-                <div><Label>Email *</Label><Input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} /></div>
-                <div><Label>Password *</Label><Input type="password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} /></div>
+                <div>
+                  <Label>Name *</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="pl-10" placeholder="Staff name" />
+                  </div>
+                </div>
+                <div>
+                  <Label>Email *</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} className="pl-10" placeholder="staff@example.com" />
+                  </div>
+                </div>
+                <div>
+                  <Label>Password *</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input type="password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} className="pl-10" placeholder="Min 6 characters" />
+                  </div>
+                </div>
                 <div>
                   <Label>Role</Label>
                   <Select value={form.role} onValueChange={v => setForm({...form, role: v})}>
@@ -128,7 +177,7 @@ export default function StaffManagement() {
                   Add Staff
                 </Button>
                 <p className="text-xs text-muted-foreground text-center">
-                  Note: Staff will receive an email to confirm their account.
+                  Staff can log in immediately with the email & password you set here. No email verification needed.
                 </p>
               </div>
             </DialogContent>
@@ -136,7 +185,7 @@ export default function StaffManagement() {
         </div>
 
         <div className="space-y-2">
-          {profiles.map(p => {
+          {staff.map(p => {
             const staffTotal = todaySales
               .filter(s => s.sold_by === p.id)
               .reduce((sum, s) => sum + Number(s.total), 0);
@@ -151,14 +200,20 @@ export default function StaffManagement() {
                       <p className="font-medium">{p.name}</p>
                       <Badge variant="outline" className="text-xs">{p.role}</Badge>
                     </div>
+                    {p.email && <p className="text-xs text-muted-foreground">{p.email}</p>}
                     <p className="text-xs text-muted-foreground">Today: Le {staffTotal.toLocaleString()}</p>
                   </div>
                 </div>
+                {p.user_id !== user?.id && (
+                  <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleDelete(p.user_id, p.name)}>
+                    <Trash2 size={16} />
+                  </Button>
+                )}
               </div>
             );
           })}
           
-          {profiles.length === 0 && (
+          {staff.length === 0 && (
             <div className="text-center py-12 text-muted-foreground">
               <UserCircle size={40} className="mx-auto mb-2 opacity-50" />
               <p>No staff members yet</p>

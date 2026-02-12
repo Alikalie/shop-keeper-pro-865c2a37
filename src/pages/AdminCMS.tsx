@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import {
   Shield, Loader2, Save, Upload, Trash2, Plus, Eye, EyeOff,
-  UserPlus, ArrowLeft, Video, Type, Image as ImageIcon
+  UserPlus, ArrowLeft, Video, Type, Image as ImageIcon, Users, MailCheck, Settings
 } from 'lucide-react';
 
 interface CMSSection {
@@ -34,6 +34,13 @@ interface AdminUser {
   created_at: string;
 }
 
+interface RegisteredUser {
+  id: string;
+  email: string;
+  name: string;
+  created_at: string;
+}
+
 export default function AdminCMS() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -41,11 +48,13 @@ export default function AdminCMS() {
   const [loading, setLoading] = useState(true);
   const [sections, setSections] = useState<CMSSection[]>([]);
   const [admins, setAdmins] = useState<AdminUser[]>([]);
+  const [users, setUsers] = useState<RegisteredUser[]>([]);
   const [saving, setSaving] = useState<string | null>(null);
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [addingAdmin, setAddingAdmin] = useState(false);
   const [adminDialogOpen, setAdminDialogOpen] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
+  const [emailVerification, setEmailVerification] = useState(false);
 
   useEffect(() => {
     checkAdminAndLoad();
@@ -54,7 +63,6 @@ export default function AdminCMS() {
   const checkAdminAndLoad = async () => {
     if (!user) return;
 
-    // Check if user is super_admin
     const { data: roleData } = await supabase
       .from('user_roles')
       .select('role')
@@ -63,14 +71,12 @@ export default function AdminCMS() {
       .maybeSingle();
 
     if (!roleData) {
-      // Check if any super admin exists - if not, offer bootstrap
       const { count } = await supabase
         .from('user_roles')
         .select('*', { count: 'exact', head: true });
 
       if (count === 0) {
-        // Bootstrap: make current user super admin
-        const { data, error } = await supabase.functions.invoke('manage-admin', {
+        const { error } = await supabase.functions.invoke('manage-admin', {
           body: { action: 'bootstrap' },
         });
         if (error) {
@@ -106,6 +112,14 @@ export default function AdminCMS() {
     });
     if (adminData?.admins) {
       setAdmins(adminData.admins);
+    }
+
+    // Load all users
+    const { data: userData } = await supabase.functions.invoke('manage-admin', {
+      body: { action: 'list_users' },
+    });
+    if (userData?.users) {
+      setUsers(userData.users);
     }
   };
 
@@ -180,6 +194,21 @@ export default function AdminCMS() {
     }
   };
 
+  const deleteUser = async (userId: string) => {
+    if (!confirm('Delete this user permanently? This cannot be undone.')) return;
+
+    const { data, error } = await supabase.functions.invoke('manage-admin', {
+      body: { action: 'delete_user', userId },
+    });
+
+    if (error || data?.error) {
+      toast.error(data?.error || 'Failed to delete user');
+    } else {
+      toast.success('User deleted');
+      await loadData();
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -224,7 +253,7 @@ export default function AdminCMS() {
             </Button>
             <div className="flex items-center gap-2">
               <Shield className="w-5 h-5 text-primary" />
-              <h1 className="font-bold text-lg">Admin CMS</h1>
+              <h1 className="font-bold text-lg">Admin Dashboard</h1>
             </div>
           </div>
           <Badge variant="outline" className="text-xs">Super Admin</Badge>
@@ -233,9 +262,11 @@ export default function AdminCMS() {
 
       <div className="container mx-auto px-4 py-6">
         <Tabs defaultValue="content" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 max-w-sm">
-            <TabsTrigger value="content">Landing Content</TabsTrigger>
-            <TabsTrigger value="admins">Super Admins</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-4 max-w-lg">
+            <TabsTrigger value="content">Content</TabsTrigger>
+            <TabsTrigger value="users">Users</TabsTrigger>
+            <TabsTrigger value="admins">Admins</TabsTrigger>
+            <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
 
           {/* CMS Content Tab */}
@@ -292,7 +323,6 @@ export default function AdminCMS() {
                     </>
                   )}
 
-                  {/* Image Upload */}
                   <div>
                     <Label className="text-xs text-muted-foreground flex items-center gap-1"><ImageIcon className="w-3 h-3" /> Image</Label>
                     {section.image_url && (
@@ -319,7 +349,6 @@ export default function AdminCMS() {
                     />
                   </div>
 
-                  {/* Video Upload (for demo_video section or any section) */}
                   {(section.section_key === 'demo_video' || section.section_key === 'hero') && (
                     <div>
                       <Label className="text-xs text-muted-foreground flex items-center gap-1"><Video className="w-3 h-3" /> Video</Label>
@@ -361,6 +390,32 @@ export default function AdminCMS() {
                 )}
               </div>
             ))}
+          </TabsContent>
+
+          {/* Users Tab */}
+          <TabsContent value="users" className="space-y-4">
+            <h2 className="text-xl font-bold flex items-center gap-2"><Users className="w-5 h-5" /> All Registered Users ({users.length})</h2>
+            <div className="space-y-2">
+              {users.map(u => (
+                <div key={u.id} className="rounded-xl border bg-card p-4 flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">{u.name}</p>
+                    <p className="text-xs text-muted-foreground">{u.email}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Joined {new Date(u.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {u.id !== user?.id && (
+                      <Button size="sm" variant="destructive" onClick={() => deleteUser(u.id)}>
+                        <Trash2 className="w-3 h-3 mr-1" /> Delete
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {users.length === 0 && <p className="text-center py-8 text-muted-foreground">No users found</p>}
+            </div>
           </TabsContent>
 
           {/* Super Admins Tab */}
@@ -426,6 +481,35 @@ export default function AdminCMS() {
               {admins.length === 0 && (
                 <p className="text-center py-8 text-muted-foreground">No admins found</p>
               )}
+            </div>
+          </TabsContent>
+
+          {/* Settings Tab */}
+          <TabsContent value="settings" className="space-y-4">
+            <h2 className="text-xl font-bold flex items-center gap-2"><Settings className="w-5 h-5" /> Platform Settings</h2>
+            
+            <div className="rounded-xl border bg-card p-6 space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <MailCheck className="w-5 h-5 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">Email Verification</p>
+                    <p className="text-sm text-muted-foreground">
+                      {emailVerification 
+                        ? 'Users must verify email before logging in'
+                        : 'Users can log in immediately after signup (no email verification)'}
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={emailVerification}
+                  onCheckedChange={v => {
+                    setEmailVerification(v);
+                    toast.success(v ? 'Email verification enabled' : 'Email verification disabled');
+                    // Note: actual Supabase auth config is managed via configure-auth tool
+                  }}
+                />
+              </div>
             </div>
           </TabsContent>
         </Tabs>

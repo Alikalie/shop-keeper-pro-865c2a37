@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 import {
   LayoutDashboard, Package, PlusCircle, ShoppingCart, Users,
-  CreditCard, BarChart3, Settings, LogOut, Menu, X, UserCircle, Loader2, Shield
+  CreditCard, BarChart3, Settings, LogOut, Menu, X, UserCircle, Loader2, Shield, Receipt
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -26,6 +26,7 @@ const navItems = [
   { path: '/products', label: 'Products', icon: Package, ownerOnly: false, adminOnly: false },
   { path: '/add-stock', label: 'Add Stock', icon: PlusCircle, ownerOnly: true, adminOnly: false },
   { path: '/pos', label: 'Sell (POS)', icon: ShoppingCart, ownerOnly: false, adminOnly: false },
+  { path: '/sales-history', label: 'Sales History', icon: Receipt, ownerOnly: false, adminOnly: false },
   { path: '/customers', label: 'Customers', icon: Users, ownerOnly: false, adminOnly: false },
   { path: '/loans', label: 'Loans / Credit', icon: CreditCard, ownerOnly: false, adminOnly: false },
   { path: '/reports', label: 'Daily Reports', icon: BarChart3, ownerOnly: true, adminOnly: false },
@@ -53,7 +54,6 @@ export default function Layout({ children }: LayoutProps) {
     }
 
     const fetchData = async () => {
-      // Fetch profile
       const { data: profileData } = await supabase
         .from('profiles')
         .select('id, name, role')
@@ -64,7 +64,6 @@ export default function Layout({ children }: LayoutProps) {
         setProfile(profileData as Profile);
       }
 
-      // Fetch shop settings
       const { data: shopData } = await supabase
         .from('shop_settings')
         .select('name')
@@ -75,7 +74,6 @@ export default function Layout({ children }: LayoutProps) {
         setShop(shopData);
       }
 
-      // Check super admin role
       const { data: roleData } = await supabase
         .from('user_roles')
         .select('role')
@@ -83,8 +81,6 @@ export default function Layout({ children }: LayoutProps) {
         .eq('role', 'super_admin')
         .maybeSingle();
       setIsSuperAdmin(!!roleData);
-
-      // Data loading complete
 
       setLoading(false);
     };
@@ -115,12 +111,10 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      {/* Mobile overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-40 bg-foreground/30 md:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* Sidebar */}
       <aside className={cn(
         "fixed inset-y-0 left-0 z-50 w-64 flex flex-col bg-sidebar text-sidebar-foreground transition-transform duration-300 md:relative md:translate-x-0",
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
@@ -170,7 +164,6 @@ export default function Layout({ children }: LayoutProps) {
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
         <header className="flex items-center gap-3 border-b px-4 py-3 md:px-6 bg-card no-print">
           <button className="md:hidden text-muted-foreground hover:text-foreground" onClick={() => setSidebarOpen(true)}>

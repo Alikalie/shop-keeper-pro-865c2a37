@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Search, Users, Loader2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Plus, Search, Users, Loader2, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
 
 interface Customer {
   id: string;
@@ -15,6 +17,16 @@ interface Customer {
   phone: string;
   address: string;
   total_debt: number;
+}
+
+interface CustomerSale {
+  id: string;
+  receipt_id: string;
+  total: number;
+  paid: number;
+  balance: number;
+  payment_method: string;
+  created_at: string;
 }
 
 export default function Customers() {
@@ -25,6 +37,9 @@ export default function Customers() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name: '', phone: '', address: '' });
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [customerSales, setCustomerSales] = useState<CustomerSale[]>([]);
+  const [loadingSales, setLoadingSales] = useState(false);
 
   const fetchCustomers = async () => {
     if (!user) return;
@@ -71,6 +86,19 @@ export default function Customers() {
     setForm({ name: '', phone: '', address: '' });
     setSaving(false);
     toast.success('Customer added');
+  };
+
+  const viewCustomerSales = async (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setLoadingSales(true);
+    const { data } = await supabase
+      .from('sales')
+      .select('id, receipt_id, total, paid, balance, payment_method, created_at')
+      .eq('user_id', user!.id)
+      .eq('customer_id', customer.id)
+      .order('created_at', { ascending: false });
+    setCustomerSales(data || []);
+    setLoadingSales(false);
   };
 
   if (loading) {
@@ -120,21 +148,60 @@ export default function Customers() {
         ) : (
           <div className="space-y-2">
             {filtered.map(c => (
-              <div key={c.id} className="rounded-xl border bg-card p-3 flex items-center justify-between">
+              <button key={c.id} onClick={() => viewCustomerSales(c)} className="w-full text-left rounded-xl border bg-card p-3 flex items-center justify-between hover:border-accent/50 transition-colors">
                 <div>
                   <p className="font-medium">{c.name}</p>
                   <p className="text-xs text-muted-foreground">{c.phone || 'No phone'}</p>
                 </div>
-                {Number(c.total_debt) > 0 && (
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">Owes</p>
-                    <p className="font-semibold text-destructive">Le {Number(c.total_debt).toLocaleString()}</p>
-                  </div>
-                )}
-              </div>
+                <div className="flex items-center gap-2">
+                  {Number(c.total_debt) > 0 && (
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground">Owes</p>
+                      <p className="font-semibold text-destructive">Le {Number(c.total_debt).toLocaleString()}</p>
+                    </div>
+                  )}
+                  <ChevronRight size={16} className="text-muted-foreground" />
+                </div>
+              </button>
             ))}
           </div>
         )}
+
+        {/* Customer Sales History */}
+        <Dialog open={!!selectedCustomer} onOpenChange={o => !o && setSelectedCustomer(null)}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>{selectedCustomer?.name} — Sales History</DialogTitle>
+            </DialogHeader>
+            {loadingSales ? (
+              <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+            ) : customerSales.length === 0 ? (
+              <p className="text-center py-8 text-muted-foreground">No sales for this customer</p>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {customerSales.map(sale => (
+                  <div key={sale.id} className="rounded-lg border bg-secondary/30 p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium">{sale.receipt_id}</p>
+                        <p className="text-xs text-muted-foreground">{format(new Date(sale.created_at), 'dd MMM yyyy HH:mm')}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold">Le {Number(sale.total).toLocaleString()}</p>
+                        <Badge variant="outline" className="text-xs">
+                          {sale.payment_method === 'cash' ? 'Cash' : 'Loan'}
+                        </Badge>
+                      </div>
+                    </div>
+                    {Number(sale.balance) > 0 && (
+                      <p className="text-xs text-destructive mt-1">Balance: Le {Number(sale.balance).toLocaleString()}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
