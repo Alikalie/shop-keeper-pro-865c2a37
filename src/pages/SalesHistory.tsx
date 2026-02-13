@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useOwnerId } from '@/hooks/useOwnerId';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,6 +32,7 @@ interface Sale {
 
 export default function SalesHistory() {
   const { user } = useAuth();
+  const { ownerId, loading: ownerLoading } = useOwnerId();
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -39,17 +41,17 @@ export default function SalesHistory() {
 
   useEffect(() => {
     const fetchSales = async () => {
-      if (!user) return;
+      if (!ownerId) return;
       const { data } = await supabase
         .from('sales')
         .select('id, receipt_id, customer_name, total, paid, balance, payment_method, sold_by_name, created_at')
-        .eq('user_id', user.id)
+        .eq('user_id', ownerId)
         .order('created_at', { ascending: false });
       setSales(data || []);
       setLoading(false);
     };
-    fetchSales();
-  }, [user]);
+    if (ownerId) fetchSales();
+  }, [ownerId]);
 
   const handleViewReceipt = async (sale: Sale) => {
     setSelectedSale(sale);
@@ -66,7 +68,7 @@ export default function SalesHistory() {
     s.sold_by_name?.toLowerCase().includes(search.toLowerCase())
   );
 
-  if (loading) {
+  if (loading || ownerLoading) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">

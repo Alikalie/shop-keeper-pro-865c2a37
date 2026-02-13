@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useOwnerId } from '@/hooks/useOwnerId';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,17 +20,18 @@ interface ShopSettingsData {
 
 export default function ShopSettings() {
   const { user } = useAuth();
+  const { ownerId, loading: ownerLoading } = useOwnerId();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<ShopSettingsData | null>(null);
 
   useEffect(() => {
     const fetchSettings = async () => {
-      if (!user) return;
+      if (!ownerId) return;
       const { data } = await supabase
         .from('shop_settings')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', ownerId)
         .maybeSingle();
       if (data) {
         setForm({
@@ -42,8 +44,8 @@ export default function ShopSettings() {
       }
       setLoading(false);
     };
-    fetchSettings();
-  }, [user]);
+    if (ownerId) fetchSettings();
+  }, [ownerId]);
 
   const handleSave = async () => {
     if (!form?.name) { toast.error('Shop name is required'); return; }
@@ -67,7 +69,7 @@ export default function ShopSettings() {
     setSaving(false);
   };
 
-  if (loading || !form) {
+  if (loading || ownerLoading || !form) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">

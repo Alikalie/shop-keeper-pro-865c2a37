@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useOwnerId } from '@/hooks/useOwnerId';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,6 +18,7 @@ interface Product {
 
 export default function AddStock() {
   const { user } = useAuth();
+  const { ownerId, loading: ownerLoading } = useOwnerId();
   const [profile, setProfile] = useState<{ id: string } | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,7 +30,7 @@ export default function AddStock() {
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!user) return;
+      if (!user || !ownerId) return;
       
       const { data: profileData } = await supabase
         .from('profiles')
@@ -40,26 +42,25 @@ export default function AddStock() {
       const { data: productsData } = await supabase
         .from('products')
         .select('id, name, quantity')
-        .eq('user_id', user.id)
+        .eq('user_id', ownerId)
         .order('name');
       setProducts(productsData || []);
       setLoading(false);
     };
     fetchData();
-  }, [user]);
+  }, [user, ownerId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!productId || !quantity || !user || !profile) { 
+    if (!productId || !quantity || !ownerId || !profile) { 
       toast.error('Select a product and quantity'); 
       return; 
     }
 
     setSaving(true);
     try {
-      // Add stock entry
       await supabase.from('stock_entries').insert({
-        user_id: user.id,
+        user_id: ownerId,
         product_id: productId,
         quantity: Number(quantity),
         buying_price: Number(buyingPrice) || 0,
@@ -67,7 +68,6 @@ export default function AddStock() {
         added_by: profile.id,
       });
 
-      // Update product quantity
       const product = products.find(p => p.id === productId);
       if (product) {
         await supabase
@@ -79,19 +79,15 @@ export default function AddStock() {
           .eq('id', productId);
       }
 
-      // Refresh products
       const { data: newProducts } = await supabase
         .from('products')
         .select('id, name, quantity')
-        .eq('user_id', user.id)
+        .eq('user_id', ownerId)
         .order('name');
       setProducts(newProducts || []);
 
       toast.success('Stock added successfully');
-      setProductId(''); 
-      setQuantity(''); 
-      setBuyingPrice(''); 
-      setSupplier('');
+      setProductId(''); setQuantity(''); setBuyingPrice(''); setSupplier('');
     } catch (error) {
       toast.error('Failed to add stock');
     } finally {
@@ -99,7 +95,7 @@ export default function AddStock() {
     }
   };
 
-  if (loading) {
+  if (loading || ownerLoading) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useOwnerId } from '@/hooks/useOwnerId';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,6 +32,7 @@ interface CustomerSale {
 
 export default function Customers() {
   const { user } = useAuth();
+  const { ownerId, loading: ownerLoading } = useOwnerId();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -42,19 +44,19 @@ export default function Customers() {
   const [loadingSales, setLoadingSales] = useState(false);
 
   const fetchCustomers = async () => {
-    if (!user) return;
+    if (!ownerId) return;
     const { data } = await supabase
       .from('customers')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
       .order('name');
     setCustomers(data || []);
     setLoading(false);
   };
 
   useEffect(() => {
-    fetchCustomers();
-  }, [user]);
+    if (ownerId) fetchCustomers();
+  }, [ownerId]);
 
   const filtered = customers.filter(c => 
     c.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -62,24 +64,20 @@ export default function Customers() {
   );
 
   const handleAdd = async () => {
-    if (!form.name || !user) return;
+    if (!form.name || !ownerId) return;
     
     setSaving(true);
     const { error } = await supabase
       .from('customers')
       .insert({
-        user_id: user.id,
+        user_id: ownerId,
         name: form.name,
         phone: form.phone,
         address: form.address,
         total_debt: 0,
       });
 
-    if (error) {
-      toast.error('Failed to add customer');
-      setSaving(false);
-      return;
-    }
+    if (error) { toast.error('Failed to add customer'); setSaving(false); return; }
 
     await fetchCustomers();
     setDialogOpen(false);
@@ -94,14 +92,14 @@ export default function Customers() {
     const { data } = await supabase
       .from('sales')
       .select('id, receipt_id, total, paid, balance, payment_method, created_at')
-      .eq('user_id', user!.id)
+      .eq('user_id', ownerId!)
       .eq('customer_id', customer.id)
       .order('created_at', { ascending: false });
     setCustomerSales(data || []);
     setLoadingSales(false);
   };
 
-  if (loading) {
+  if (loading || ownerLoading) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">
@@ -167,7 +165,6 @@ export default function Customers() {
           </div>
         )}
 
-        {/* Customer Sales History */}
         <Dialog open={!!selectedCustomer} onOpenChange={o => !o && setSelectedCustomer(null)}>
           <DialogContent className="max-w-lg">
             <DialogHeader>

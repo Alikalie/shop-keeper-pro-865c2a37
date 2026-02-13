@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useOwnerId } from '@/hooks/useOwnerId';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,6 +22,7 @@ interface Product {
 
 export default function Products() {
   const { user } = useAuth();
+  const { ownerId, loading: ownerLoading } = useOwnerId();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -30,26 +32,26 @@ export default function Products() {
   const [form, setForm] = useState({ name: '', category: '', buyingPrice: '', sellingPrice: '', quantity: '', lowStockLevel: '5' });
 
   const fetchProducts = async () => {
-    if (!user) return;
+    if (!ownerId) return;
     const { data } = await supabase
       .from('products')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
       .order('name');
     setProducts(data || []);
     setLoading(false);
   };
 
   useEffect(() => {
-    fetchProducts();
-  }, [user]);
+    if (ownerId) fetchProducts();
+  }, [ownerId]);
 
   const filtered = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
 
   const resetForm = () => setForm({ name: '', category: '', buyingPrice: '', sellingPrice: '', quantity: '', lowStockLevel: '5' });
 
   const handleSave = async () => {
-    if (!form.name || !form.sellingPrice || !user) return;
+    if (!form.name || !form.sellingPrice || !ownerId) return;
     
     setSaving(true);
     
@@ -66,17 +68,13 @@ export default function Products() {
         })
         .eq('id', editing.id);
       
-      if (error) {
-        toast.error('Failed to update product');
-        setSaving(false);
-        return;
-      }
+      if (error) { toast.error('Failed to update product'); setSaving(false); return; }
       toast.success('Product updated');
     } else {
       const { error } = await supabase
         .from('products')
         .insert({
-          user_id: user.id,
+          user_id: ownerId,
           name: form.name,
           category: form.category || 'General',
           buying_price: Number(form.buyingPrice) || 0,
@@ -85,11 +83,7 @@ export default function Products() {
           low_stock_level: Number(form.lowStockLevel) || 5,
         });
       
-      if (error) {
-        toast.error('Failed to add product');
-        setSaving(false);
-        return;
-      }
+      if (error) { toast.error('Failed to add product'); setSaving(false); return; }
       toast.success('Product added');
     }
     
@@ -113,7 +107,7 @@ export default function Products() {
     setDialogOpen(true);
   };
 
-  if (loading) {
+  if (loading || ownerLoading) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">

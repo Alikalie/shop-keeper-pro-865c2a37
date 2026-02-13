@@ -6,8 +6,8 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const DEFAULT_ADMIN_EMAIL = "admin@dukasmart.app";
-const DEFAULT_ADMIN_PASSWORD = "Admin";
+const DEFAULT_ADMIN_EMAIL = "deswife@dukasmart.app";
+const DEFAULT_ADMIN_PASSWORD = "Deswife";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -26,7 +26,7 @@ Deno.serve(async (req) => {
     if (action === "admin_login") {
       const { username, password } = body;
       
-      if (username === "Admin" && password === "Admin") {
+      if (username === "Deswife" && password === "Deswife") {
         const { data: existingUsers } = await adminClient.auth.admin.listUsers();
         let adminUser = existingUsers?.users?.find((u: any) => u.email === DEFAULT_ADMIN_EMAIL);
         

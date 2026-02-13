@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useOwnerId } from '@/hooks/useOwnerId';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -43,6 +44,7 @@ interface SaleData {
 
 export default function POS() {
   const { user } = useAuth();
+  const { ownerId, loading: ownerLoading } = useOwnerId();
   const [profile, setProfile] = useState<{ id: string; name: string } | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -59,10 +61,9 @@ export default function POS() {
   const [newCust, setNewCust] = useState({ name: '', phone: '', address: '' });
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !ownerId) return;
     
     const fetchData = async () => {
-      // Get profile
       const { data: profileData } = await supabase
         .from('profiles')
         .select('id, name')
@@ -70,20 +71,18 @@ export default function POS() {
         .maybeSingle();
       if (profileData) setProfile(profileData);
 
-      // Get products
       const { data: productsData } = await supabase
         .from('products')
         .select('id, name, selling_price, quantity')
-        .eq('user_id', user.id)
+        .eq('user_id', ownerId)
         .gt('quantity', 0)
         .order('name');
       setProducts(productsData || []);
 
-      // Get customers
       const { data: customersData } = await supabase
         .from('customers')
         .select('id, name')
-        .eq('user_id', user.id)
+        .eq('user_id', ownerId)
         .order('name');
       setCustomers(customersData || []);
 
@@ -91,7 +90,7 @@ export default function POS() {
     };
 
     fetchData();
-  }, [user]);
+  }, [user, ownerId]);
 
   const filtered = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
   const total = cart.reduce((sum, item) => sum + item.product.selling_price * item.quantity, 0);
@@ -125,20 +124,19 @@ export default function POS() {
     const { data: shopData } = await supabase
       .from('shop_settings')
       .select('name')
-      .eq('user_id', user!.id)
+      .eq('user_id', ownerId!)
       .maybeSingle();
     
     const prefix = (shopData?.name || 'SHOP').split(' ')[0]?.toUpperCase().slice(0, 4) || 'SHOP';
     const date = new Date();
     const dateStr = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
     
-    // Get today's sales count
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const { count } = await supabase
       .from('sales')
       .select('*', { count: 'exact', head: true })
-      .eq('user_id', user!.id)
+      .eq('user_id', ownerId!)
       .gte('created_at', today.toISOString());
     
     const num = String((count || 0) + 1).padStart(5, '0');
@@ -148,7 +146,7 @@ export default function POS() {
   const handleCheckout = async () => {
     if (cart.length === 0) { toast.error('Cart is empty'); return; }
     if (paymentMethod === 'loan' && customerId === 'walk-in') { toast.error('Select a customer for loan'); return; }
-    if (!user || !profile) return;
+    if (!user || !profile || !ownerId) return;
 
     setSaving(true);
     
@@ -156,11 +154,10 @@ export default function POS() {
       const receiptId = await generateReceiptId();
       const customerName = customerId === 'walk-in' ? 'Walk-in Customer' : customers.find(c => c.id === customerId)?.name || 'Unknown';
 
-      // Create sale
       const { data: saleData, error: saleError } = await supabase
         .from('sales')
         .insert({
-          user_id: user.id,
+          user_id: ownerId,
           receipt_id: receiptId,
           customer_id: customerId === 'walk-in' ? null : customerId,
           customer_name: customerName,
@@ -176,7 +173,6 @@ export default function POS() {
 
       if (saleError) throw saleError;
 
-      // Create sale items
       const saleItems = cart.map(c => ({
         sale_id: saleData.id,
         product_id: c.product.id,
@@ -188,7 +184,6 @@ export default function POS() {
 
       await supabase.from('sale_items').insert(saleItems);
 
-      // Update product quantities
       for (const item of cart) {
         await supabase
           .from('products')
@@ -196,10 +191,9 @@ export default function POS() {
           .eq('id', item.product.id);
       }
 
-      // Create loan if needed
       if (paymentMethod === 'loan' && balance > 0) {
         await supabase.from('loans').insert({
-          user_id: user.id,
+          user_id: ownerId,
           sale_id: saleData.id,
           customer_id: customerId,
           customer_name: customerName,
@@ -209,7 +203,6 @@ export default function POS() {
           status: 'unpaid',
         });
 
-        // Update customer debt
         const { data: customerData } = await supabase
           .from('customers')
           .select('total_debt')
@@ -242,11 +235,10 @@ export default function POS() {
         })),
       });
 
-      // Refresh products
       const { data: newProducts } = await supabase
         .from('products')
         .select('id, name, selling_price, quantity')
-        .eq('user_id', user.id)
+        .eq('user_id', ownerId)
         .gt('quantity', 0)
         .order('name');
       setProducts(newProducts || []);
@@ -266,12 +258,12 @@ export default function POS() {
   };
 
   const handleAddCustomer = async () => {
-    if (!newCust.name || !user) return;
+    if (!newCust.name || !ownerId) return;
     
     const { data, error } = await supabase
       .from('customers')
       .insert({
-        user_id: user.id,
+        user_id: ownerId,
         name: newCust.name,
         phone: newCust.phone,
         address: newCust.address,
@@ -292,7 +284,7 @@ export default function POS() {
     toast.success('Customer added');
   };
 
-  if (loading) {
+  if (loading || ownerLoading) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">

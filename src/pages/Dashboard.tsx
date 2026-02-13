@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useOwnerId } from '@/hooks/useOwnerId';
 import { Package, ShoppingCart, Users, CreditCard, TrendingUp, AlertTriangle, Loader2 } from 'lucide-react';
 
 interface Product {
@@ -26,6 +27,7 @@ interface Loan {
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const { ownerId, loading: ownerLoading } = useOwnerId();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<{ name: string; role: string } | null>(null);
   const [stats, setStats] = useState({
@@ -40,29 +42,25 @@ export default function Dashboard() {
   const [lowStock, setLowStock] = useState<Product[]>([]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !ownerId) return;
 
     const fetchData = async () => {
-      // Get profile
       const { data: profileData } = await supabase
         .from('profiles')
         .select('name, role')
         .eq('user_id', user.id)
         .maybeSingle();
-      
       if (profileData) setProfile(profileData);
 
-      // Get today's date range
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
 
-      // Get today's sales
       const { data: salesData } = await supabase
         .from('sales')
         .select('id, total, payment_method, created_at')
-        .eq('user_id', user.id)
+        .eq('user_id', ownerId)
         .gte('created_at', today.toISOString())
         .lt('created_at', tomorrow.toISOString());
 
@@ -71,32 +69,28 @@ export default function Dashboard() {
       const cashSales = sales.filter(s => s.payment_method === 'cash').reduce((sum, s) => sum + Number(s.total), 0);
       const creditSales = sales.filter(s => s.payment_method === 'loan').reduce((sum, s) => sum + Number(s.total), 0);
 
-      // Get products count
       const { count: productsCount } = await supabase
         .from('products')
         .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id);
+        .eq('user_id', ownerId);
 
-      // Get customers count
       const { count: customersCount } = await supabase
         .from('customers')
         .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id);
+        .eq('user_id', ownerId);
 
-      // Get outstanding loans
       const { data: loansData } = await supabase
         .from('loans')
         .select('id, balance, status')
-        .eq('user_id', user.id)
+        .eq('user_id', ownerId)
         .neq('status', 'paid');
 
       const outstandingLoans = (loansData || []).reduce((sum, l) => sum + Number(l.balance), 0);
 
-      // Get low stock products
       const { data: productsData } = await supabase
         .from('products')
         .select('id, name, quantity, low_stock_level')
-        .eq('user_id', user.id);
+        .eq('user_id', ownerId);
 
       const lowStockItems = (productsData || []).filter(p => p.quantity <= p.low_stock_level);
 
@@ -114,9 +108,9 @@ export default function Dashboard() {
     };
 
     fetchData();
-  }, [user]);
+  }, [user, ownerId]);
 
-  if (loading) {
+  if (loading || ownerLoading) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">
@@ -157,7 +151,7 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {profile?.role === 'owner' && stats.outstandingLoans > 0 && (
+        {stats.outstandingLoans > 0 && (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
             <div className="flex items-center gap-2 mb-1">
               <CreditCard size={16} className="text-amber-500" />
