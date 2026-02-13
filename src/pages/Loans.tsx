@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useOwnerId } from '@/hooks/useOwnerId';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,6 +30,7 @@ interface Loan {
 
 export default function Loans() {
   const { user } = useAuth();
+  const { ownerId, loading: ownerLoading } = useOwnerId();
   const [profile, setProfile] = useState<{ id: string; name: string } | null>(null);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,11 +40,11 @@ export default function Loans() {
   const [saving, setSaving] = useState(false);
 
   const fetchLoans = async () => {
-    if (!user) return;
+    if (!ownerId) return;
     const { data } = await supabase
       .from('loans')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
       .order('created_at', { ascending: false });
     setLoans(data || []);
     setLoading(false);
@@ -59,7 +61,7 @@ export default function Loans() {
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!user) return;
+      if (!user || !ownerId) return;
       const { data: profileData } = await supabase
         .from('profiles')
         .select('id, name')
@@ -69,7 +71,7 @@ export default function Loans() {
       await fetchLoans();
     };
     fetchData();
-  }, [user]);
+  }, [user, ownerId]);
 
   const handleSelectLoan = async (loan: Loan) => {
     setSelectedLoan(loan);
@@ -84,28 +86,21 @@ export default function Loans() {
     
     setSaving(true);
     try {
-      // Add payment
       await supabase.from('loan_payments').insert({
         loan_id: selectedLoan.id,
         amount,
         received_by: profile.id,
       });
 
-      // Update loan
       const newPaidAmount = Number(selectedLoan.paid_amount) + amount;
       const newBalance = Number(selectedLoan.total_amount) - newPaidAmount;
       const newStatus = newBalance <= 0 ? 'paid' : 'part-paid';
 
       await supabase
         .from('loans')
-        .update({
-          paid_amount: newPaidAmount,
-          balance: newBalance,
-          status: newStatus,
-        })
+        .update({ paid_amount: newPaidAmount, balance: newBalance, status: newStatus })
         .eq('id', selectedLoan.id);
 
-      // Update customer debt
       if (selectedLoan.customer_id) {
         const { data: customerData } = await supabase
           .from('customers')
@@ -138,7 +133,7 @@ export default function Loans() {
     return 'bg-destructive/10 text-destructive border-destructive/30';
   };
 
-  if (loading) {
+  if (loading || ownerLoading) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">

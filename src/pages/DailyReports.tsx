@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { format, subDays } from 'date-fns';
+import { useOwnerId } from '@/hooks/useOwnerId';
+import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Printer, Loader2, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
@@ -17,19 +18,20 @@ interface Sale {
 
 export default function DailyReports() {
   const { user } = useAuth();
+  const { ownerId, loading: ownerLoading } = useOwnerId();
   const [loading, setLoading] = useState(true);
   const [shop, setShop] = useState({ name: 'My Shop' });
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [sales, setSales] = useState<Sale[]>([]);
 
   const fetchReport = async (date: Date) => {
-    if (!user) return;
+    if (!ownerId) return;
     setLoading(true);
 
     const { data: shopData } = await supabase
       .from('shop_settings')
       .select('name')
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
       .maybeSingle();
     if (shopData) setShop({ name: shopData.name || 'My Shop' });
 
@@ -41,7 +43,7 @@ export default function DailyReports() {
     const { data: salesData } = await supabase
       .from('sales')
       .select('id, total, payment_method, sold_by_name, created_at')
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
       .gte('created_at', dayStart.toISOString())
       .lt('created_at', dayEnd.toISOString())
       .order('created_at');
@@ -51,8 +53,8 @@ export default function DailyReports() {
   };
 
   useEffect(() => {
-    fetchReport(selectedDate);
-  }, [user, selectedDate]);
+    if (ownerId) fetchReport(selectedDate);
+  }, [ownerId, selectedDate]);
 
   const goDay = (delta: number) => {
     const next = new Date(selectedDate);
@@ -80,6 +82,16 @@ export default function DailyReports() {
 
   const isToday = format(selectedDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
 
+  if (ownerLoading) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <div className="animate-fade-in max-w-2xl space-y-4">
@@ -88,7 +100,6 @@ export default function DailyReports() {
           <Button variant="outline" onClick={() => window.print()}><Printer size={14} className="mr-1" /> Print</Button>
         </div>
 
-        {/* Date Navigation */}
         <div className="flex items-center justify-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => goDay(-1)}>
             <ChevronLeft size={18} />
