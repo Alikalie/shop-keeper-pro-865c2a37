@@ -128,7 +128,7 @@
 }
 
 @media print {
-  .no-print {
+  .no-print, nav, header, aside, .sidebar, button:not(.print-btn) {
     display: none !important;
   }
   .print-only {
@@ -137,5 +137,18 @@
   body {
     background: white !important;
     color: black !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  @page {
+    size: A5 landscape;
+    margin: 5mm;
+  }
+  .receipt-print {
+    width: 210mm !important;
+    min-height: 148mm !important;
+    border: 2px solid black !important;
+    page-break-inside: avoid;
+    font-size: 11px !important;
   }
 }
