@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Plus, UserCircle, Loader2, Trash2, Mail, Lock, User } from 'lucide-react';
+import { Plus, UserCircle, Loader2, Trash2, Mail, Lock, User, Pencil } from 'lucide-react';
 
 interface StaffMember {
   id: string;
@@ -31,13 +31,14 @@ export default function StaffManagement() {
   const [todaySales, setTodaySales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editDialog, setEditDialog] = useState<StaffMember | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'staff' });
+  const [editForm, setEditForm] = useState({ name: '', role: 'staff' });
 
   const fetchData = async () => {
     if (!user) return;
 
-    // Get staff via edge function
     const { data, error } = await supabase.functions.invoke('manage-admin', {
       body: { action: 'list_staff' },
     });
@@ -46,7 +47,6 @@ export default function StaffManagement() {
       setStaff(data.staff);
     }
 
-    // Get today's sales
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -55,7 +55,6 @@ export default function StaffManagement() {
     const { data: salesData } = await supabase
       .from('sales')
       .select('sold_by, total')
-      .eq('user_id', user.id)
       .gte('created_at', today.toISOString())
       .lt('created_at', tomorrow.toISOString());
 
@@ -72,14 +71,12 @@ export default function StaffManagement() {
       toast.error('Fill all required fields'); 
       return; 
     }
-
     if (form.password.length < 6) {
       toast.error('Password must be at least 6 characters');
       return;
     }
 
     setSaving(true);
-    
     const { data, error } = await supabase.functions.invoke('manage-admin', {
       body: { 
         action: 'create_staff',
@@ -99,6 +96,31 @@ export default function StaffManagement() {
     toast.success(`Staff "${form.name}" added! They can login with: ${form.email}`);
     setDialogOpen(false);
     setForm({ name: '', email: '', password: '', role: 'staff' });
+    setSaving(false);
+    await fetchData();
+  };
+
+  const handleEdit = async () => {
+    if (!editDialog || !editForm.name) return;
+    setSaving(true);
+
+    const { data, error } = await supabase.functions.invoke('manage-admin', {
+      body: { 
+        action: 'update_staff',
+        staffUserId: editDialog.user_id,
+        staffName: editForm.name,
+        staffRole: editForm.role,
+      },
+    });
+
+    if (error || data?.error) {
+      toast.error(data?.error || 'Failed to update staff');
+      setSaving(false);
+      return;
+    }
+
+    toast.success('Staff updated');
+    setEditDialog(null);
     setSaving(false);
     await fetchData();
   };
@@ -177,7 +199,7 @@ export default function StaffManagement() {
                   Add Staff
                 </Button>
                 <p className="text-xs text-muted-foreground text-center">
-                  Staff can log in immediately with the email & password you set here. No email verification needed.
+                  Staff can log in immediately with the email & password you set here.
                 </p>
               </div>
             </DialogContent>
@@ -205,9 +227,14 @@ export default function StaffManagement() {
                   </div>
                 </div>
                 {p.user_id !== user?.id && (
-                  <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleDelete(p.user_id, p.name)}>
-                    <Trash2 size={16} />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="icon" onClick={() => { setEditDialog(p); setEditForm({ name: p.name, role: p.role }); }}>
+                      <Pencil size={16} className="text-muted-foreground" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleDelete(p.user_id, p.name)}>
+                      <Trash2 size={16} />
+                    </Button>
+                  </div>
                 )}
               </div>
             );
@@ -220,6 +247,33 @@ export default function StaffManagement() {
             </div>
           )}
         </div>
+
+        {/* Edit Staff Dialog */}
+        <Dialog open={!!editDialog} onOpenChange={(o) => !o && setEditDialog(null)}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Edit Staff Member</DialogTitle></DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <Label>Name</Label>
+                <Input value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} />
+              </div>
+              <div>
+                <Label>Role</Label>
+                <Select value={editForm.role} onValueChange={v => setEditForm({...editForm, role: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="staff">Sales Staff</SelectItem>
+                    <SelectItem value="owner">Owner</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button onClick={handleEdit} disabled={saving} className="w-full bg-accent text-accent-foreground hover:bg-accent/90">
+                {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Save Changes
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );

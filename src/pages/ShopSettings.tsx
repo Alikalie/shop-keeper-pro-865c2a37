@@ -7,8 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Settings, Loader2 } from 'lucide-react';
+import { Settings, Loader2, AlertTriangle, Trash2 } from 'lucide-react';
 
 interface ShopSettingsData {
   id: string;
@@ -24,10 +25,17 @@ export default function ShopSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<ShopSettingsData | null>(null);
+  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [resetConfirm, setResetConfirm] = useState('');
+  const [resetting, setResetting] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
 
   useEffect(() => {
     const fetchSettings = async () => {
-      if (!ownerId) return;
+      if (!ownerId || !user) return;
+      
+      setIsOwner(ownerId === user.id);
+
       const { data } = await supabase
         .from('shop_settings')
         .select('*')
@@ -45,7 +53,7 @@ export default function ShopSettings() {
       setLoading(false);
     };
     if (ownerId) fetchSettings();
-  }, [ownerId]);
+  }, [ownerId, user]);
 
   const handleSave = async () => {
     if (!form?.name) { toast.error('Shop name is required'); return; }
@@ -67,6 +75,34 @@ export default function ShopSettings() {
       toast.success('Settings saved');
     }
     setSaving(false);
+  };
+
+  const handleResetInventory = async () => {
+    if (resetConfirm !== 'DELETE ALL') {
+      toast.error('Type "DELETE ALL" to confirm');
+      return;
+    }
+    if (!ownerId) return;
+
+    setResetting(true);
+    try {
+      // Delete in order: sale_items -> sales -> loan_payments -> loans -> stock_entries -> products -> customers
+      // We use the edge function for this to bypass RLS with service role
+      const { data, error } = await supabase.functions.invoke('manage-admin', {
+        body: { action: 'reset_shop_data' },
+      });
+
+      if (error || data?.error) {
+        toast.error(data?.error || 'Failed to reset data');
+      } else {
+        toast.success('All shop data has been deleted. Start fresh!');
+        setShowResetDialog(false);
+        setResetConfirm('');
+      }
+    } catch {
+      toast.error('Failed to reset data');
+    }
+    setResetting(false);
   };
 
   if (loading || ownerLoading || !form) {
@@ -96,7 +132,46 @@ export default function ShopSettings() {
             Save Settings
           </Button>
         </div>
+
+        {/* Reset / Delete Shop Data - Only for owners */}
+        {isOwner && (
+          <div className="mt-6 bg-card rounded-xl border border-destructive/30 p-5 space-y-3">
+            <div className="flex items-center gap-2 text-destructive">
+              <AlertTriangle size={18} />
+              <h2 className="font-semibold">Danger Zone</h2>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Delete all products, sales, loans, customers and stock entries to start a new inventory from scratch.
+            </p>
+            <Button variant="destructive" onClick={() => setShowResetDialog(true)}>
+              <Trash2 size={14} className="mr-1" /> Reset All Shop Data
+            </Button>
+          </div>
+        )}
       </div>
+
+      <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-destructive flex items-center gap-2">
+              <AlertTriangle size={18} /> Reset All Shop Data
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              This will permanently delete <strong>all products, sales history, loans, customers, and stock entries</strong>. This action cannot be undone.
+            </p>
+            <div>
+              <Label>Type "DELETE ALL" to confirm</Label>
+              <Input value={resetConfirm} onChange={e => setResetConfirm(e.target.value)} placeholder="DELETE ALL" />
+            </div>
+            <Button variant="destructive" onClick={handleResetInventory} disabled={resetting || resetConfirm !== 'DELETE ALL'} className="w-full">
+              {resetting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+              Permanently Delete Everything
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }
