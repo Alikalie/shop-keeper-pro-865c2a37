@@ -412,10 +412,10 @@ export default function POS() {
 
         {/* Receipt Dialog */}
         <Dialog open={showReceipt} onOpenChange={setShowReceipt}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader><DialogTitle className="flex items-center gap-2"><Printer size={18} /> Receipt</DialogTitle></DialogHeader>
             {lastSale && <Receipt sale={lastSale} />}
-            <Button onClick={() => window.print()} variant="outline"><Printer size={14} className="mr-1" /> Print</Button>
+            <Button onClick={() => window.print()} variant="outline" className="no-print"><Printer size={14} className="mr-1" /> Print</Button>
           </DialogContent>
         </Dialog>
       </div>
