@@ -145,10 +145,13 @@
     margin: 5mm;
   }
   .receipt-print {
-    width: 210mm !important;
-    min-height: 148mm !important;
+    width: 190mm !important;
+    max-height: 138mm !important;
     border: 2px solid black !important;
     page-break-inside: avoid;
-    font-size: 11px !important;
+    font-size: 9px !important;
+    padding: 3mm !important;
+    color: black !important;
+    background: white !important;
   }
 }

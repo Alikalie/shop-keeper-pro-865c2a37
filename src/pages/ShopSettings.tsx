@@ -36,38 +36,54 @@ export default function ShopSettings() {
       
       setIsOwner(ownerId === user.id);
 
-      const { data } = await supabase
-        .from('shop_settings')
-        .select('*')
-        .eq('user_id', ownerId)
-        .maybeSingle();
-      if (data) {
+      try {
+        const { data } = await supabase
+          .from('shop_settings')
+          .select('*')
+          .eq('user_id', ownerId)
+          .maybeSingle();
+        
         setForm({
-          id: data.id,
-          name: data.name || 'My Shop',
-          address: data.address || '',
-          phone: data.phone || '',
-          footer_message: data.footer_message || 'Thank you for your patronage!',
+          id: data?.id || '',
+          name: data?.name || 'My Shop',
+          address: data?.address || '',
+          phone: data?.phone || '',
+          footer_message: data?.footer_message || 'Thank you for your patronage!',
+        });
+      } catch {
+        setForm({
+          id: '',
+          name: 'My Shop',
+          address: '',
+          phone: '',
+          footer_message: 'Thank you for your patronage!',
         });
       }
       setLoading(false);
     };
-    if (ownerId) fetchSettings();
+    if (ownerId && user) fetchSettings();
   }, [ownerId, user]);
 
   const handleSave = async () => {
     if (!form?.name) { toast.error('Shop name is required'); return; }
+    if (!ownerId) return;
     
     setSaving(true);
-    const { error } = await supabase
-      .from('shop_settings')
-      .update({
-        name: form.name,
-        address: form.address,
-        phone: form.phone,
-        footer_message: form.footer_message,
-      })
-      .eq('id', form.id);
+    const payload = {
+      name: form.name,
+      address: form.address,
+      phone: form.phone,
+      footer_message: form.footer_message,
+    };
+
+    let error;
+    if (form.id) {
+      ({ error } = await supabase.from('shop_settings').update(payload).eq('id', form.id));
+    } else {
+      const res = await supabase.from('shop_settings').insert({ ...payload, user_id: ownerId }).select().single();
+      error = res.error;
+      if (res.data) setForm({ ...form, id: res.data.id });
+    }
 
     if (error) {
       toast.error('Failed to save settings');

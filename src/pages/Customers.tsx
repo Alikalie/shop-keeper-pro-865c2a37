@@ -17,6 +17,7 @@ interface Customer {
   name: string;
   phone: string;
   address: string;
+  gender: string;
   total_debt: number;
 }
 
@@ -38,7 +39,7 @@ export default function Customers() {
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ name: '', phone: '', address: '' });
+  const [form, setForm] = useState({ name: '', phone: '', address: '', gender: '' });
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [customerSales, setCustomerSales] = useState<CustomerSale[]>([]);
   const [loadingSales, setLoadingSales] = useState(false);
@@ -74,6 +75,7 @@ export default function Customers() {
         name: form.name,
         phone: form.phone,
         address: form.address,
+        gender: form.gender,
         total_debt: 0,
       });
 
@@ -81,7 +83,7 @@ export default function Customers() {
 
     await fetchCustomers();
     setDialogOpen(false);
-    setForm({ name: '', phone: '', address: '' });
+    setForm({ name: '', phone: '', address: '', gender: '' });
     setSaving(false);
     toast.success('Customer added');
   };
@@ -124,6 +126,14 @@ export default function Customers() {
                 <div><Label>Name *</Label><Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
                 <div><Label>Phone</Label><Input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /></div>
                 <div><Label>Address</Label><Input value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div>
+                <div>
+                  <Label>Gender</Label>
+                  <select value={form.gender} onChange={e => setForm({...form, gender: e.target.value})} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background">
+                    <option value="">Select</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                  </select>
+                </div>
                 <Button onClick={handleAdd} disabled={saving} className="w-full bg-accent text-accent-foreground hover:bg-accent/90">
                   {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                   Add Customer
@@ -149,7 +159,7 @@ export default function Customers() {
               <button key={c.id} onClick={() => viewCustomerSales(c)} className="w-full text-left rounded-xl border bg-card p-3 flex items-center justify-between hover:border-accent/50 transition-colors">
                 <div>
                   <p className="font-medium">{c.name}</p>
-                  <p className="text-xs text-muted-foreground">{c.phone || 'No phone'}</p>
+                  <p className="text-xs text-muted-foreground">{c.phone || 'No phone'} {c.gender ? `· ${c.gender}` : ''}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   {Number(c.total_debt) > 0 && (
