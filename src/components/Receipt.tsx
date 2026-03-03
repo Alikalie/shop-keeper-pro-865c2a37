@@ -56,9 +56,9 @@ export default function Receipt({ sale }: ReceiptProps) {
   const saleDate = new Date(sale.created_at);
 
   return (
-    <div className="receipt-print border-2 border-foreground bg-card p-6 rounded-lg font-mono text-xs leading-relaxed"
-         style={{ width: '210mm', minHeight: '148mm', maxWidth: '100%' }}>
-      {/* A5 Landscape: 210mm x 148mm */}
+    <div className="receipt-print border-2 border-black bg-white p-4 rounded font-mono text-[10px] leading-snug text-black"
+         style={{ width: '190mm', maxHeight: '138mm', maxWidth: '100%' }}>
+      {/* A5 Landscape: fits within 210x148mm with margins */}
       <div className="flex flex-col h-full">
         {/* Header */}
         <div className="text-center mb-4 border-b-2 border-foreground pb-3">
