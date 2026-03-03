@@ -3,7 +3,8 @@ import Layout from '@/components/Layout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useOwnerId } from '@/hooks/useOwnerId';
-import { Package, ShoppingCart, Users, CreditCard, TrendingUp, AlertTriangle, Loader2 } from 'lucide-react';
+import { Package, ShoppingCart, Users, CreditCard, TrendingUp, AlertTriangle, Loader2, Clock } from 'lucide-react';
+import { format } from 'date-fns';
 
 interface Product {
   id: string;
@@ -12,17 +13,13 @@ interface Product {
   low_stock_level: number;
 }
 
-interface Sale {
+interface RecentActivity {
   id: string;
-  total: number;
-  payment_method: string;
-  created_at: string;
-}
-
-interface Loan {
-  id: string;
-  balance: number;
-  status: string;
+  type: 'sale' | 'stock' | 'loan';
+  description: string;
+  amount?: number;
+  by: string;
+  time: string;
 }
 
 export default function Dashboard() {
@@ -40,6 +37,7 @@ export default function Dashboard() {
     outstandingLoans: 0,
   });
   const [lowStock, setLowStock] = useState<Product[]>([]);
+  const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
 
   useEffect(() => {
     if (!user || !ownerId) return;
@@ -93,6 +91,48 @@ export default function Dashboard() {
         .eq('user_id', ownerId);
 
       const lowStockItems = (productsData || []).filter(p => p.quantity <= p.low_stock_level);
+
+      // Fetch recent activities (last 10 sales + stock entries)
+      const activities: RecentActivity[] = [];
+
+      const { data: recentSales } = await supabase
+        .from('sales')
+        .select('id, receipt_id, total, sold_by_name, created_at, payment_method')
+        .eq('user_id', ownerId)
+        .order('created_at', { ascending: false })
+        .limit(8);
+
+      (recentSales || []).forEach(s => {
+        activities.push({
+          id: `sale-${s.id}`,
+          type: 'sale',
+          description: `Sale ${s.receipt_id} (${s.payment_method})`,
+          amount: Number(s.total),
+          by: s.sold_by_name || 'Owner',
+          time: s.created_at,
+        });
+      });
+
+      const { data: recentStock } = await supabase
+        .from('stock_entries')
+        .select('id, quantity, buying_price, created_at, products(name), profiles!stock_entries_added_by_fkey(name)')
+        .eq('user_id', ownerId)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      (recentStock || []).forEach((s: any) => {
+        activities.push({
+          id: `stock-${s.id}`,
+          type: 'stock',
+          description: `Added ${s.quantity}x ${s.products?.name || 'item'}`,
+          amount: Number(s.buying_price) * s.quantity,
+          by: s.profiles?.name || 'Owner',
+          time: s.created_at,
+        });
+      });
+
+      activities.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+      setRecentActivities(activities.slice(0, 10));
 
       setStats({
         totalSalesToday,
@@ -152,9 +192,9 @@ export default function Dashboard() {
         </div>
 
         {stats.outstandingLoans > 0 && (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+          <div className="rounded-xl border border-warning/30 bg-warning/5 p-4">
             <div className="flex items-center gap-2 mb-1">
-              <CreditCard size={16} className="text-amber-500" />
+              <CreditCard size={16} className="text-warning" />
               <span className="text-sm font-medium">Outstanding Loans</span>
             </div>
             <p className="text-lg font-bold">Le {stats.outstandingLoans.toLocaleString()}</p>
@@ -172,6 +212,34 @@ export default function Dashboard() {
                 <div key={p.id} className="flex justify-between text-sm">
                   <span>{p.name}</span>
                   <span className="font-medium text-destructive">{p.quantity} left</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Recent Activity Feed */}
+        {recentActivities.length > 0 && (
+          <div className="rounded-xl border bg-card p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Clock size={16} className="text-accent" />
+              <span className="text-sm font-semibold">Recent Activity</span>
+            </div>
+            <div className="space-y-2">
+              {recentActivities.map(activity => (
+                <div key={activity.id} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${
+                      activity.type === 'sale' ? 'bg-accent' : activity.type === 'stock' ? 'bg-primary' : 'bg-warning'
+                    }`} />
+                    <div className="min-w-0">
+                      <p className="text-sm truncate">{activity.description}</p>
+                      <p className="text-xs text-muted-foreground">by {activity.by} · {format(new Date(activity.time), 'dd MMM HH:mm')}</p>
+                    </div>
+                  </div>
+                  {activity.amount !== undefined && (
+                    <span className="text-sm font-medium shrink-0 ml-2">Le {activity.amount.toLocaleString()}</span>
+                  )}
                 </div>
               ))}
             </div>
