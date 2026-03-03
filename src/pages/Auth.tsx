@@ -4,16 +4,55 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ShoppingCart, ArrowLeft, Mail, Lock, User, Loader2, Building2, UserCircle } from 'lucide-react';
+import { ShoppingCart, ArrowLeft, Mail, Lock, User, Loader2, Building2, UserCircle, Eye, EyeOff, CheckCircle2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
-const emailSchema = z.string().email('Please enter a valid email');
-const passwordSchema = z.string().min(6, 'Password must be at least 6 characters');
-const nameSchema = z.string().min(2, 'Name must be at least 2 characters');
+const emailSchema = z.string().trim().email('Please enter a valid email').max(255, 'Email too long');
+const nameSchema = z.string().trim().min(2, 'Name must be at least 2 characters').max(100, 'Name too long');
 
 type AuthMode = 'login' | 'signup' | 'forgot-password' | 'reset-password';
 type AccountType = 'personal' | 'organization';
+
+const passwordChecks = [
+  { label: 'At least 8 characters', test: (p: string) => p.length >= 8 },
+  { label: 'Contains uppercase letter', test: (p: string) => /[A-Z]/.test(p) },
+  { label: 'Contains lowercase letter', test: (p: string) => /[a-z]/.test(p) },
+  { label: 'Contains a number', test: (p: string) => /\d/.test(p) },
+  { label: 'Contains special character', test: (p: string) => /[!@#$%^&*(),.?":{}|<>]/.test(p) },
+];
+
+function PasswordStrength({ password }: { password: string }) {
+  if (!password) return null;
+  const passed = passwordChecks.filter(c => c.test(password)).length;
+  const strength = passed <= 2 ? 'Weak' : passed <= 4 ? 'Medium' : 'Strong';
+  const color = passed <= 2 ? 'bg-destructive' : passed <= 4 ? 'bg-warning' : 'bg-accent';
+
+  return (
+    <div className="space-y-2 mt-2">
+      <div className="flex gap-1">
+        {[1, 2, 3, 4, 5].map(i => (
+          <div key={i} className={`h-1.5 flex-1 rounded-full ${i <= passed ? color : 'bg-muted'}`} />
+        ))}
+      </div>
+      <p className={`text-xs font-medium ${passed <= 2 ? 'text-destructive' : passed <= 4 ? 'text-warning' : 'text-accent'}`}>
+        {strength} password
+      </p>
+      <div className="space-y-1">
+        {passwordChecks.map(c => (
+          <div key={c.label} className="flex items-center gap-1.5 text-xs">
+            {c.test(password) ? (
+              <CheckCircle2 size={12} className="text-accent" />
+            ) : (
+              <XCircle size={12} className="text-muted-foreground" />
+            )}
+            <span className={c.test(password) ? 'text-accent' : 'text-muted-foreground'}>{c.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function Auth() {
   const navigate = useNavigate();
@@ -27,15 +66,15 @@ export default function Auth() {
   const [businessName, setBusinessName] = useState('');
   const [accountType, setAccountType] = useState<AccountType>('personal');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   useEffect(() => {
-    const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) navigate('/dashboard');
-    };
-    checkSession();
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session) navigate('/dashboard');
+    });
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) navigate('/dashboard');
     });
 
@@ -45,13 +84,18 @@ export default function Auth() {
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    try { emailSchema.parse(email); } catch (e) {
-      if (e instanceof z.ZodError) newErrors.email = e.errors[0].message;
+    if (mode !== 'reset-password') {
+      try { emailSchema.parse(email); } catch (e) {
+        if (e instanceof z.ZodError) newErrors.email = e.errors[0].message;
+      }
     }
 
     if (mode !== 'forgot-password') {
-      try { passwordSchema.parse(password); } catch (e) {
-        if (e instanceof z.ZodError) newErrors.password = e.errors[0].message;
+      if (password.length < 8) {
+        newErrors.password = 'Password must be at least 8 characters';
+      } else {
+        const passed = passwordChecks.filter(c => c.test(password)).length;
+        if (passed < 3) newErrors.password = 'Password is too weak. Add uppercase, numbers, or special characters.';
       }
     }
 
@@ -60,6 +104,11 @@ export default function Auth() {
         if (e instanceof z.ZodError) newErrors.name = e.errors[0].message;
       }
       if (!businessName.trim()) newErrors.businessName = 'Business/Shop name is required';
+      if (businessName.trim().length > 100) newErrors.businessName = 'Business name too long';
+      if (password !== confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
+    }
+
+    if (mode === 'reset-password') {
       if (password !== confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
     }
 
@@ -70,12 +119,12 @@ export default function Auth() {
   const handleLogin = async () => {
     if (!validateForm()) return;
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     setLoading(false);
 
     if (error) {
-      if (error.message.includes('Invalid login')) toast.error('Invalid email or password');
-      else if (error.message.includes('Email not confirmed')) toast.error('Please confirm your email before logging in');
+      if (error.message.includes('Invalid login')) toast.error('Invalid email or password. Please check your credentials.');
+      else if (error.message.includes('Email not confirmed')) toast.error('Please verify your email before logging in. Check your inbox.');
       else toast.error(error.message);
       return;
     }
@@ -87,21 +136,35 @@ export default function Auth() {
   const handleSignup = async () => {
     if (!validateForm()) return;
     setLoading(true);
-    const redirectUrl = `${window.location.origin}/dashboard`;
+    const redirectUrl = `${window.location.origin}/auth?mode=login`;
 
     const { data: signUpData, error } = await supabase.auth.signUp({
-      email,
+      email: email.trim(),
       password,
       options: {
         emailRedirectTo: redirectUrl,
-        data: { name, account_type: accountType, business_name: businessName }
+        data: { name: name.trim(), account_type: accountType, business_name: businessName.trim() }
       }
     });
     
     if (error) {
       setLoading(false);
-      if (error.message.includes('already registered')) toast.error('An account with this email already exists');
-      else toast.error(error.message);
+      if (error.message.includes('already registered') || error.message.includes('already exists')) {
+        toast.error('An account with this email already exists. Try signing in instead.');
+        setErrors({ email: 'This email is already registered' });
+      } else if (error.message.includes('password')) {
+        toast.error('Password is too weak. Please choose a stronger password.');
+      } else {
+        toast.error(error.message);
+      }
+      return;
+    }
+
+    // Check if user already existed (Supabase returns a user with identities=[] for existing emails)
+    if (signUpData.user && signUpData.user.identities && signUpData.user.identities.length === 0) {
+      setLoading(false);
+      toast.error('An account with this email already exists. Try signing in instead.');
+      setErrors({ email: 'This email is already registered' });
       return;
     }
 
@@ -110,43 +173,41 @@ export default function Auth() {
       const maxStaff = accountType === 'personal' ? 3 : 999;
       
       const { data: org } = await supabase.from('organizations').insert({
-        name: businessName,
+        name: businessName.trim(),
         account_type: accountType,
         owner_id: signUpData.user.id,
         max_staff: maxStaff,
       }).select('id').single();
 
       if (org) {
-        // Add owner as org member
         await supabase.from('org_members').insert({
           org_id: org.id,
           user_id: signUpData.user.id,
           role: 'owner',
         });
 
-        // Update profile with org_id and account_type
         await supabase.from('profiles')
           .update({ org_id: org.id, account_type: accountType })
           .eq('user_id', signUpData.user.id);
         
-        // Update shop name
         await supabase.from('shop_settings')
-          .update({ name: businessName })
+          .update({ name: businessName.trim() })
           .eq('user_id', signUpData.user.id);
       }
     }
 
     setLoading(false);
-    toast.success('Account created! You can now sign in.');
+    toast.success('Account created! Please check your email to verify your account before signing in.');
     setMode('login');
   };
 
   const handleForgotPassword = async () => {
+    const newErrors: Record<string, string> = {};
     try { emailSchema.parse(email); } catch (e) {
-      if (e instanceof z.ZodError) { setErrors({ email: e.errors[0].message }); return; }
+      if (e instanceof z.ZodError) { newErrors.email = e.errors[0].message; setErrors(newErrors); return; }
     }
     setLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: `${window.location.origin}/auth?mode=reset-password`,
     });
     setLoading(false);
@@ -156,12 +217,7 @@ export default function Auth() {
   };
 
   const handleResetPassword = async () => {
-    try {
-      passwordSchema.parse(password);
-      if (password !== confirmPassword) { setErrors({ confirmPassword: 'Passwords do not match' }); return; }
-    } catch (e) {
-      if (e instanceof z.ZodError) { setErrors({ password: e.errors[0].message }); return; }
-    }
+    if (!validateForm()) return;
     setLoading(true);
     const { error } = await supabase.auth.updateUser({ password });
     setLoading(false);
@@ -200,8 +256,7 @@ export default function Auth() {
 
   return (
     <div className="min-h-screen flex bg-background">
-      {/* Left side - Form */}
-      <div className="flex-1 flex items-center justify-center p-8">
+      <div className="flex-1 flex items-center justify-center p-4 sm:p-8">
         <div className="w-full max-w-md">
           <button
             onClick={() => navigate('/')}
@@ -224,7 +279,6 @@ export default function Auth() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === 'signup' && (
               <>
-                {/* Account Type Selection */}
                 <div className="space-y-2">
                   <Label>Account Type</Label>
                   <div className="grid grid-cols-2 gap-3">
@@ -261,22 +315,20 @@ export default function Auth() {
                   </div>
                 </div>
 
-                {/* Name */}
                 <div className="space-y-2">
                   <Label htmlFor="name">Your Name</Label>
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input id="name" placeholder="John Doe" value={name} onChange={e => setName(e.target.value)} className="pl-10" autoFocus />
+                    <Input id="name" placeholder="John Doe" value={name} onChange={e => setName(e.target.value)} className="pl-10" autoFocus maxLength={100} />
                   </div>
                   {errors.name && <p className="text-sm text-destructive">{errors.name}</p>}
                 </div>
 
-                {/* Business Name */}
                 <div className="space-y-2">
                   <Label htmlFor="businessName">{accountType === 'organization' ? 'Organization Name' : 'Shop Name'}</Label>
                   <div className="relative">
                     <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input id="businessName" placeholder={accountType === 'organization' ? 'Acme Corp' : 'My Shop'} value={businessName} onChange={e => setBusinessName(e.target.value)} className="pl-10" />
+                    <Input id="businessName" placeholder={accountType === 'organization' ? 'Acme Corp' : 'My Shop'} value={businessName} onChange={e => setBusinessName(e.target.value)} className="pl-10" maxLength={100} />
                   </div>
                   {errors.businessName && <p className="text-sm text-destructive">{errors.businessName}</p>}
                 </div>
@@ -288,7 +340,7 @@ export default function Auth() {
                 <Label htmlFor="email">Email</Label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input id="email" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} className="pl-10" autoFocus={mode !== 'signup'} />
+                  <Input id="email" type="email" placeholder="you@example.com" value={email} onChange={e => { setEmail(e.target.value); setErrors(prev => ({ ...prev, email: '' })); }} className="pl-10" autoFocus={mode !== 'signup'} maxLength={255} />
                 </div>
                 {errors.email && <p className="text-sm text-destructive">{errors.email}</p>}
               </div>
@@ -299,9 +351,13 @@ export default function Auth() {
                 <Label htmlFor="password">Password</Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input id="password" type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} className="pl-10" />
+                  <Input id="password" type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} className="pl-10 pr-10" />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
                 {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
+                {(mode === 'signup' || mode === 'reset-password') && <PasswordStrength password={password} />}
               </div>
             )}
 
@@ -310,7 +366,10 @@ export default function Auth() {
                 <Label htmlFor="confirmPassword">Confirm Password</Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input id="confirmPassword" type="password" placeholder="••••••••" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="pl-10" />
+                  <Input id="confirmPassword" type={showConfirmPassword ? 'text' : 'password'} placeholder="••••••••" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="pl-10 pr-10" />
+                  <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
                 {errors.confirmPassword && <p className="text-sm text-destructive">{errors.confirmPassword}</p>}
               </div>
@@ -350,7 +409,6 @@ export default function Auth() {
         </div>
       </div>
 
-      {/* Right side - Decorative */}
       <div className="hidden lg:flex flex-1 bg-gradient-to-br from-primary to-primary/80 items-center justify-center p-8">
         <div className="max-w-md text-primary-foreground">
           <h2 className="text-3xl font-bold mb-4">Your shop, under control.</h2>

@@ -32,6 +32,7 @@ const navItems = [
   { path: '/reports', label: 'Daily Reports', icon: BarChart3, ownerOnly: true, adminOnly: false },
   { path: '/staff', label: 'Staff', icon: UserCircle, ownerOnly: true, adminOnly: false },
   { path: '/settings', label: 'Shop Settings', icon: Settings, ownerOnly: true, adminOnly: false },
+  { path: '/profile', label: 'My Profile', icon: UserCircle, ownerOnly: false, adminOnly: false },
   { path: '/admin-cms', label: 'Admin CMS', icon: Shield, ownerOnly: false, adminOnly: true },
 ];
 
@@ -54,34 +55,15 @@ export default function Layout({ children }: LayoutProps) {
     }
 
     const fetchData = async () => {
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('id, name, role')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      const [profileRes, shopRes, roleRes] = await Promise.all([
+        supabase.from('profiles').select('id, name, role').eq('user_id', user.id).maybeSingle(),
+        supabase.from('shop_settings').select('name').eq('user_id', user.id).maybeSingle(),
+        supabase.from('user_roles').select('role').eq('user_id', user.id).eq('role', 'super_admin').maybeSingle(),
+      ]);
 
-      if (profileData) {
-        setProfile(profileData as Profile);
-      }
-
-      const { data: shopData } = await supabase
-        .from('shop_settings')
-        .select('name')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (shopData) {
-        setShop(shopData);
-      }
-
-      const { data: roleData } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user.id)
-        .eq('role', 'super_admin')
-        .maybeSingle();
-      setIsSuperAdmin(!!roleData);
-
+      if (profileRes.data) setProfile(profileRes.data as Profile);
+      if (shopRes.data) setShop(shopRes.data);
+      setIsSuperAdmin(!!roleRes.data);
       setLoading(false);
     };
 
@@ -111,10 +93,12 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
+      {/* Mobile overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-40 bg-foreground/30 md:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
+      {/* Sidebar */}
       <aside className={cn(
         "fixed inset-y-0 left-0 z-50 w-64 flex flex-col bg-sidebar text-sidebar-foreground transition-transform duration-300 md:relative md:translate-x-0",
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
@@ -164,18 +148,22 @@ export default function Layout({ children }: LayoutProps) {
         </div>
       </aside>
 
+      {/* Main content */}
       <main className="flex-1 flex flex-col overflow-hidden">
         <header className="flex items-center gap-3 border-b px-4 py-3 md:px-6 bg-card no-print">
-          <button className="md:hidden text-muted-foreground hover:text-foreground" onClick={() => setSidebarOpen(true)}>
+          <button className="md:hidden text-muted-foreground hover:text-foreground" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
             <Menu size={22} />
           </button>
           <div className="flex-1" />
-          <div className="flex items-center gap-2 text-sm">
+          <button 
+            onClick={() => navigate('/profile')} 
+            className="flex items-center gap-2 text-sm hover:opacity-80 transition-opacity"
+          >
             <div className="h-7 w-7 rounded-full bg-accent flex items-center justify-center text-accent-foreground font-semibold text-xs">
               {profile.name.charAt(0)}
             </div>
             <span className="hidden sm:inline font-medium">{profile.name}</span>
-          </div>
+          </button>
         </header>
         <div className="flex-1 overflow-y-auto p-4 md:p-6">
           {children}

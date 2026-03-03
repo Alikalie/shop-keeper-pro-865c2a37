@@ -19,6 +19,7 @@ import ShopSettings from "./pages/ShopSettings";
 import SalesHistory from "./pages/SalesHistory";
 import NotFound from "./pages/NotFound";
 import AdminCMS from "./pages/AdminCMS";
+import Profile from "./pages/Profile";
 
 const queryClient = new QueryClient();
 
@@ -44,6 +45,7 @@ const App = () => (
             <Route path="/sales-history" element={<SalesHistory />} />
             <Route path="/staff" element={<StaffManagement />} />
             <Route path="/settings" element={<ShopSettings />} />
+            <Route path="/profile" element={<Profile />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
