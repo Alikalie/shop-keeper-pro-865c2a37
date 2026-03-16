@@ -6,8 +6,8 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const DEFAULT_ADMIN_EMAIL = "deswife@dukasmart.app";
-const DEFAULT_ADMIN_PASSWORD = "Deswife";
+const DEFAULT_ADMIN_EMAIL = "alikaliefofanahh@gmail.com";
+const DEFAULT_ADMIN_PASSWORD = "Alikalie@22";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
