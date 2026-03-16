@@ -9,6 +9,33 @@ const corsHeaders = {
 const DEFAULT_ADMIN_EMAIL = "alikaliefofanahh@gmail.com";
 const DEFAULT_ADMIN_PASSWORD = "Alikalie@22";
 
+// Simple in-memory rate limiter for admin login
+const loginAttempts = new Map<string, { count: number; lastAttempt: number }>();
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MS = 300000; // 5 minutes
+
+function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
+  const now = Date.now();
+  const record = loginAttempts.get(ip);
+  if (!record) return { allowed: true };
+  if (now - record.lastAttempt > LOCKOUT_MS) {
+    loginAttempts.delete(ip);
+    return { allowed: true };
+  }
+  if (record.count >= MAX_ATTEMPTS) {
+    return { allowed: false, retryAfter: Math.ceil((LOCKOUT_MS - (now - record.lastAttempt)) / 1000) };
+  }
+  return { allowed: true };
+}
+
+function recordFailedAttempt(ip: string) {
+  const now = Date.now();
+  const record = loginAttempts.get(ip) || { count: 0, lastAttempt: now };
+  record.count += 1;
+  record.lastAttempt = now;
+  loginAttempts.set(ip, record);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -25,8 +52,21 @@ Deno.serve(async (req) => {
     // Admin login action - no auth required
     if (action === "admin_login") {
       const { username, password } = body;
+      const clientIp = req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "unknown";
       
-      if (username === "alikaliefofanahh@gmail.com" && password === "Alikalie@22") {
+      const rateCheck = checkRateLimit(clientIp);
+      if (!rateCheck.allowed) {
+        return new Response(JSON.stringify({ error: `Too many attempts. Try again in ${rateCheck.retryAfter} seconds.` }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      
+      // Sanitize inputs
+      const sanitizedUsername = (username || "").trim().toLowerCase().slice(0, 255);
+      const sanitizedPassword = (password || "").slice(0, 128);
+      
+      if (sanitizedUsername === DEFAULT_ADMIN_EMAIL.toLowerCase() && sanitizedPassword === DEFAULT_ADMIN_PASSWORD) {
         const { data: existingUsers } = await adminClient.auth.admin.listUsers();
         let adminUser = existingUsers?.users?.find((u: any) => u.email === DEFAULT_ADMIN_EMAIL);
         
@@ -72,6 +112,7 @@ Deno.serve(async (req) => {
         });
       }
 
+      recordFailedAttempt(clientIp);
       return new Response(JSON.stringify({ error: "Invalid admin credentials" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

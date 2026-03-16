@@ -126,6 +126,13 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "loan_payments_received_by_fkey"
+            columns: ["received_by"]
+            isOneToOne: false
+            referencedRelation: "profiles_safe"
+            referencedColumns: ["id"]
+          },
         ]
       }
       loans: {
@@ -290,7 +297,6 @@ export type Database = {
           id: string
           name: string
           org_id: string | null
-          pin: string | null
           role: string
           updated_at: string
           user_id: string
@@ -301,7 +307,6 @@ export type Database = {
           id?: string
           name: string
           org_id?: string | null
-          pin?: string | null
           role?: string
           updated_at?: string
           user_id: string
@@ -312,7 +317,6 @@ export type Database = {
           id?: string
           name?: string
           org_id?: string | null
-          pin?: string | null
           role?: string
           updated_at?: string
           user_id?: string
@@ -430,6 +434,13 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "sales_sold_by_fkey"
+            columns: ["sold_by"]
+            isOneToOne: false
+            referencedRelation: "profiles_safe"
+            referencedColumns: ["id"]
+          },
         ]
       }
       shop_settings: {
@@ -464,6 +475,27 @@ export type Database = {
           name?: string
           phone?: string | null
           updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      staff_pins: {
+        Row: {
+          created_at: string | null
+          id: string
+          pin: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          pin?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          pin?: string | null
           user_id?: string
         }
         Relationships: []
@@ -508,6 +540,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "stock_entries_added_by_fkey"
+            columns: ["added_by"]
+            isOneToOne: false
+            referencedRelation: "profiles_safe"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "stock_entries_product_id_fkey"
             columns: ["product_id"]
             isOneToOne: false
@@ -539,9 +578,50 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      profiles_safe: {
+        Row: {
+          account_type: string | null
+          created_at: string | null
+          id: string | null
+          name: string | null
+          org_id: string | null
+          role: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          account_type?: string | null
+          created_at?: string | null
+          id?: string | null
+          name?: string | null
+          org_id?: string | null
+          role?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          account_type?: string | null
+          created_at?: string | null
+          id?: string | null
+          name?: string | null
+          org_id?: string | null
+          role?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
+      get_my_pin: { Args: never; Returns: string }
       get_org_owner_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
