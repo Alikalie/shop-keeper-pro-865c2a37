@@ -61,8 +61,28 @@ export default function Layout({ children }: LayoutProps) {
         supabase.from('user_roles').select('role').eq('user_id', user.id).eq('role', 'super_admin').maybeSingle(),
       ]);
 
-      if (profileRes.data) setProfile(profileRes.data as Profile);
-      if (shopRes.data) setShop(shopRes.data);
+      if (profileRes.data) {
+        setProfile(profileRes.data as Profile);
+      } else {
+        // Profile missing - create one from user metadata
+        const name = user.user_metadata?.name || user.email?.split('@')[0] || 'User';
+        const { data: newProfile } = await supabase
+          .from('profiles')
+          .insert({ user_id: user.id, name, role: 'owner' })
+          .select('id, name, role')
+          .single();
+        if (newProfile) setProfile(newProfile as Profile);
+      }
+      if (shopRes.data) {
+        setShop(shopRes.data);
+      } else {
+        const { data: newShop } = await supabase
+          .from('shop_settings')
+          .insert({ user_id: user.id, name: 'My Shop' })
+          .select('name')
+          .single();
+        if (newShop) setShop(newShop);
+      }
       setIsSuperAdmin(!!roleRes.data);
       setLoading(false);
     };

@@ -69,12 +69,13 @@ export default function AdminAuth() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="username">Email</Label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   id="username"
-                  placeholder="Admin"
+                  type="email"
+                  placeholder="admin@example.com"
                   value={username}
                   onChange={e => setUsername(e.target.value)}
                   className="pl-10"
