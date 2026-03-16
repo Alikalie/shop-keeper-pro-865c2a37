@@ -9,6 +9,33 @@ const corsHeaders = {
 const DEFAULT_ADMIN_EMAIL = "alikaliefofanahh@gmail.com";
 const DEFAULT_ADMIN_PASSWORD = "Alikalie@22";
 
+// Simple in-memory rate limiter for admin login
+const loginAttempts = new Map<string, { count: number; lastAttempt: number }>();
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MS = 300000; // 5 minutes
+
+function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
+  const now = Date.now();
+  const record = loginAttempts.get(ip);
+  if (!record) return { allowed: true };
+  if (now - record.lastAttempt > LOCKOUT_MS) {
+    loginAttempts.delete(ip);
+    return { allowed: true };
+  }
+  if (record.count >= MAX_ATTEMPTS) {
+    return { allowed: false, retryAfter: Math.ceil((LOCKOUT_MS - (now - record.lastAttempt)) / 1000) };
+  }
+  return { allowed: true };
+}
+
+function recordFailedAttempt(ip: string) {
+  const now = Date.now();
+  const record = loginAttempts.get(ip) || { count: 0, lastAttempt: now };
+  record.count += 1;
+  record.lastAttempt = now;
+  loginAttempts.set(ip, record);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
