@@ -26,7 +26,7 @@ Deno.serve(async (req) => {
     if (action === "admin_login") {
       const { username, password } = body;
       
-      if (username === "Deswife" && password === "Deswife") {
+      if (username === "alikaliefofanahh@gmail.com" && password === "Alikalie@22") {
         const { data: existingUsers } = await adminClient.auth.admin.listUsers();
         let adminUser = existingUsers?.users?.find((u: any) => u.email === DEFAULT_ADMIN_EMAIL);
         
