@@ -52,8 +52,21 @@ Deno.serve(async (req) => {
     // Admin login action - no auth required
     if (action === "admin_login") {
       const { username, password } = body;
+      const clientIp = req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "unknown";
       
-      if (username === "alikaliefofanahh@gmail.com" && password === "Alikalie@22") {
+      const rateCheck = checkRateLimit(clientIp);
+      if (!rateCheck.allowed) {
+        return new Response(JSON.stringify({ error: `Too many attempts. Try again in ${rateCheck.retryAfter} seconds.` }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      
+      // Sanitize inputs
+      const sanitizedUsername = (username || "").trim().toLowerCase().slice(0, 255);
+      const sanitizedPassword = (password || "").slice(0, 128);
+      
+      if (sanitizedUsername === DEFAULT_ADMIN_EMAIL.toLowerCase() && sanitizedPassword === DEFAULT_ADMIN_PASSWORD) {
         const { data: existingUsers } = await adminClient.auth.admin.listUsers();
         let adminUser = existingUsers?.users?.find((u: any) => u.email === DEFAULT_ADMIN_EMAIL);
         
