@@ -120,19 +120,43 @@ export default function Auth() {
     return Object.keys(newErrors).length === 0;
   };
 
+  // Sanitize input - strip HTML tags and dangerous characters
+  const sanitize = (input: string) => input.replace(/<[^>]*>/g, '').replace(/[<>"'&]/g, '').trim();
+
+  const isLockedOut = () => {
+    if (!lockoutUntil) return false;
+    if (Date.now() < lockoutUntil) return true;
+    setLockoutUntil(null);
+    setLoginAttempts(0);
+    return false;
+  };
+
   const handleLogin = async () => {
+    if (isLockedOut()) {
+      const seconds = Math.ceil((lockoutUntil! - Date.now()) / 1000);
+      toast.error(`Too many failed attempts. Try again in ${seconds} seconds.`);
+      return;
+    }
     if (!validateForm()) return;
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    const { error } = await supabase.auth.signInWithPassword({ email: sanitize(email), password });
     setLoading(false);
 
     if (error) {
-      if (error.message.includes('Invalid login')) toast.error('Invalid email or password. Please check your credentials.');
+      const newAttempts = loginAttempts + 1;
+      setLoginAttempts(newAttempts);
+      if (newAttempts >= 5) {
+        setLockoutUntil(Date.now() + 60000); // 1 minute lockout
+        toast.error('Too many failed attempts. Account locked for 60 seconds.');
+        return;
+      }
+      if (error.message.includes('Invalid login')) toast.error(`Invalid email or password. ${5 - newAttempts} attempts remaining.`);
       else if (error.message.includes('Email not confirmed')) toast.error('Please verify your email before logging in. Check your inbox.');
-      else toast.error(error.message);
+      else toast.error('Login failed. Please try again.');
       return;
     }
 
+    setLoginAttempts(0);
     toast.success('Welcome back!');
     navigate('/dashboard');
   };
