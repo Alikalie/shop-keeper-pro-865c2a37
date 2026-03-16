@@ -167,11 +167,11 @@ export default function Auth() {
     const redirectUrl = `${window.location.origin}/auth?mode=login`;
 
     const { data: signUpData, error } = await supabase.auth.signUp({
-      email: email.trim(),
+      email: sanitize(email),
       password,
       options: {
         emailRedirectTo: redirectUrl,
-        data: { name: name.trim(), account_type: accountType, business_name: businessName.trim() }
+        data: { name: sanitize(name), account_type: accountType, business_name: sanitize(businessName) }
       }
     });
     
