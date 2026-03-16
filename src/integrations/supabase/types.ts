@@ -297,7 +297,6 @@ export type Database = {
           id: string
           name: string
           org_id: string | null
-          pin: string | null
           role: string
           updated_at: string
           user_id: string
@@ -308,7 +307,6 @@ export type Database = {
           id?: string
           name: string
           org_id?: string | null
-          pin?: string | null
           role?: string
           updated_at?: string
           user_id: string
@@ -319,7 +317,6 @@ export type Database = {
           id?: string
           name?: string
           org_id?: string | null
-          pin?: string | null
           role?: string
           updated_at?: string
           user_id?: string
@@ -478,6 +475,27 @@ export type Database = {
           name?: string
           phone?: string | null
           updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      staff_pins: {
+        Row: {
+          created_at: string | null
+          id: string
+          pin: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          pin?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          pin?: string | null
           user_id?: string
         }
         Relationships: []
