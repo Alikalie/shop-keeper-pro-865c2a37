@@ -13,8 +13,9 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import {
   Shield, Loader2, Save, Upload, Trash2, Plus, Eye, EyeOff,
-  UserPlus, ArrowLeft, Video, Type, Image as ImageIcon, Users, MailCheck, Settings
+  UserPlus, ArrowLeft, Video, Type, Image as ImageIcon, Users, MailCheck, Settings, Store
 } from 'lucide-react';
+import AdminShops from '@/components/admin/AdminShops';
 
 interface CMSSection {
   id: string;
