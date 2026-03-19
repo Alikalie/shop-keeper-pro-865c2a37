@@ -157,14 +157,29 @@ export default function Auth() {
     }
     if (!validateForm()) return;
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email: sanitize(email), password });
+
+    const cleanEmail = sanitize(email);
+
+    // If this is the super admin email, bootstrap the admin account first
+    const ADMIN_EMAIL = 'alikaliefofanahh@gmail.com';
+    if (cleanEmail.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+      try {
+        await supabase.functions.invoke('manage-admin', {
+          body: { action: 'admin_login', username: cleanEmail, password },
+        });
+      } catch {
+        // Ignore bootstrap errors - login will fail naturally if wrong password
+      }
+    }
+
+    const { data: signInData, error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
     setLoading(false);
 
     if (error) {
       const newAttempts = loginAttempts + 1;
       setLoginAttempts(newAttempts);
       if (newAttempts >= 5) {
-        setLockoutUntil(Date.now() + 60000); // 1 minute lockout
+        setLockoutUntil(Date.now() + 60000);
         toast.error('Too many failed attempts. Account locked for 60 seconds.');
         return;
       }
@@ -176,7 +191,9 @@ export default function Auth() {
 
     setLoginAttempts(0);
     toast.success('Welcome back!');
-    navigate('/dashboard');
+    if (signInData.user) {
+      await redirectByRole(signInData.user.id);
+    }
   };
 
   const handleSignup = async () => {
