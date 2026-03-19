@@ -271,6 +271,11 @@ export default function AdminCMS() {
             <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
 
+          {/* Shops Tab */}
+          <TabsContent value="shops">
+            <AdminShops />
+          </TabsContent>
+
           {/* CMS Content Tab */}
           <TabsContent value="content" className="space-y-4">
             {sections.map(section => (
