@@ -13,8 +13,9 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import {
   Shield, Loader2, Save, Upload, Trash2, Plus, Eye, EyeOff,
-  UserPlus, ArrowLeft, Video, Type, Image as ImageIcon, Users, MailCheck, Settings
+  UserPlus, ArrowLeft, Video, Type, Image as ImageIcon, Users, MailCheck, Settings, Store
 } from 'lucide-react';
+import AdminShops from '@/components/admin/AdminShops';
 
 interface CMSSection {
   id: string;
@@ -261,13 +262,19 @@ export default function AdminCMS() {
       </header>
 
       <div className="container mx-auto px-4 py-6">
-        <Tabs defaultValue="content" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 max-w-lg">
+        <Tabs defaultValue="shops" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-5 max-w-2xl">
+            <TabsTrigger value="shops"><Store className="w-4 h-4 mr-1" />Shops</TabsTrigger>
             <TabsTrigger value="content">Content</TabsTrigger>
             <TabsTrigger value="users">Users</TabsTrigger>
             <TabsTrigger value="admins">Admins</TabsTrigger>
             <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
+
+          {/* Shops Tab */}
+          <TabsContent value="shops">
+            <AdminShops />
+          </TabsContent>
 
           {/* CMS Content Tab */}
           <TabsContent value="content" className="space-y-4">

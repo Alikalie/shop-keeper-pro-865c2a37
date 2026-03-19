@@ -260,8 +260,13 @@ export default function Auth() {
     }
 
     setLoading(false);
-    toast.success('Account created! Please check your email to verify your account before signing in.');
-    setMode('login');
+    toast.success('Account created successfully!');
+    // Auto-confirm is enabled, so user is already signed in
+    if (signUpData.session) {
+      await redirectByRole(signUpData.user!.id);
+    } else {
+      setMode('login');
+    }
   };
 
   const handleForgotPassword = async () => {

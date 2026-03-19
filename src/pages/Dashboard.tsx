@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useOwnerId } from '@/hooks/useOwnerId';
+import { useRealtimeDashboard } from '@/hooks/useRealtimeDashboard';
 import { Package, ShoppingCart, Users, CreditCard, TrendingUp, AlertTriangle, Loader2, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -39,10 +40,10 @@ export default function Dashboard() {
   const [lowStock, setLowStock] = useState<Product[]>([]);
   const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
 
-  useEffect(() => {
+  const fetchData = useCallback(async () => {
     if (!user || !ownerId) return;
 
-    const fetchData = async () => {
+    const loadDashboard = async () => {
       const { data: profileData } = await supabase
         .from('profiles')
         .select('name, role')
@@ -147,8 +148,12 @@ export default function Dashboard() {
       setLoading(false);
     };
 
-    fetchData();
+    loadDashboard();
   }, [user, ownerId]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  useRealtimeDashboard(ownerId, fetchData);
 
   if (loading || ownerLoading) {
     return (
