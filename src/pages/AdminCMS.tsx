@@ -263,7 +263,8 @@ export default function AdminCMS() {
 
       <div className="container mx-auto px-4 py-6">
         <Tabs defaultValue="content" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 max-w-lg">
+          <TabsList className="grid w-full grid-cols-5 max-w-2xl">
+            <TabsTrigger value="shops"><Store className="w-4 h-4 mr-1" />Shops</TabsTrigger>
             <TabsTrigger value="content">Content</TabsTrigger>
             <TabsTrigger value="users">Users</TabsTrigger>
             <TabsTrigger value="admins">Admins</TabsTrigger>
