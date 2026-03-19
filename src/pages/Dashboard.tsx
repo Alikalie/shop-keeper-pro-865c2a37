@@ -40,7 +40,7 @@ export default function Dashboard() {
   const [lowStock, setLowStock] = useState<Product[]>([]);
   const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
 
-  useEffect(() => {
+  const fetchData = useCallback(async () => {
     if (!user || !ownerId) return;
 
     const fetchData = async () => {
