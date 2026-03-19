@@ -148,8 +148,12 @@ export default function Dashboard() {
       setLoading(false);
     };
 
-    fetchData();
+    loadDashboard();
   }, [user, ownerId]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  useRealtimeDashboard(ownerId, fetchData);
 
   if (loading || ownerLoading) {
     return (
