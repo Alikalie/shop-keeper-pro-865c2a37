@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useOwnerId } from '@/hooks/useOwnerId';
+import { useRealtimeDashboard } from '@/hooks/useRealtimeDashboard';
 import { Package, ShoppingCart, Users, CreditCard, TrendingUp, AlertTriangle, Loader2, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 
