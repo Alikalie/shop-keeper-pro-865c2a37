@@ -73,13 +73,27 @@ export default function Auth() {
   const [loginAttempts, setLoginAttempts] = useState(0);
   const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
 
+  const redirectByRole = async (userId: string) => {
+    const { data: roleData } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+      .eq('role', 'super_admin')
+      .maybeSingle();
+    if (roleData) {
+      navigate('/admin-cms');
+    } else {
+      navigate('/dashboard');
+    }
+  };
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session) navigate('/dashboard');
+      if (session) redirectByRole(session.user.id);
     });
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) navigate('/dashboard');
+      if (session) redirectByRole(session.user.id);
     });
 
     return () => subscription.unsubscribe();
