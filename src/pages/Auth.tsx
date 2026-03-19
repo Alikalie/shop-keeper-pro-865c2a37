@@ -108,13 +108,17 @@ export default function Auth() {
       }
     }
 
-    if (mode !== 'forgot-password') {
+    if (mode !== 'forgot-password' && mode !== 'login') {
       if (password.length < 8) {
         newErrors.password = 'Password must be at least 8 characters';
       } else {
         const passed = passwordChecks.filter(c => c.test(password)).length;
         if (passed < 3) newErrors.password = 'Password is too weak. Add uppercase, numbers, or special characters.';
       }
+    }
+
+    if (mode === 'login' && password.length < 1) {
+      newErrors.password = 'Password is required';
     }
 
     if (mode === 'signup') {
