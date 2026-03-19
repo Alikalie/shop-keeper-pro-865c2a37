@@ -43,7 +43,7 @@ export default function Dashboard() {
   const fetchData = useCallback(async () => {
     if (!user || !ownerId) return;
 
-    const fetchData = async () => {
+    const loadDashboard = async () => {
       const { data: profileData } = await supabase
         .from('profiles')
         .select('name, role')
