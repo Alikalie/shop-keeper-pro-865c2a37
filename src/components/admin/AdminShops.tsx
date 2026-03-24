@@ -3,11 +3,15 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import {
   Store, Users, Package, ShoppingCart, CreditCard, Loader2,
-  Search, ChevronDown, ChevronUp, Trash2, TrendingUp
+  Search, ChevronDown, ChevronUp, Trash2, TrendingUp, Trophy,
+  UserCircle, Pencil, Receipt as ReceiptIcon
 } from 'lucide-react';
+import { format } from 'date-fns';
+import Receipt from '@/components/Receipt';
 
 interface ShopData {
   user_id: string;
@@ -32,26 +36,23 @@ export default function AdminShops() {
   const [search, setSearch] = useState('');
   const [expandedShop, setExpandedShop] = useState<string | null>(null);
   const [shopDetails, setShopDetails] = useState<Record<string, any>>({});
+  const [receiptSale, setReceiptSale] = useState<any>(null);
 
   useEffect(() => {
     loadShops();
-
-    // Realtime updates
     const channel = supabase
       .channel('admin-shops')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => loadShops())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => loadShops())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => loadShops())
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, []);
 
   const loadShops = async () => {
-    // Get all shop settings
     const { data: shopSettings } = await supabase
       .from('shop_settings')
       .select('user_id, name, address, phone');
-
     if (!shopSettings) { setLoading(false); return; }
 
     const today = new Date();
@@ -74,10 +75,9 @@ export default function AdminShops() {
           .from('org_members')
           .select('id', { count: 'exact', head: true })
           .eq('org_id', orgRes.data.id);
-        staffCount = (count || 1) - 1; // exclude owner
+        staffCount = (count || 1) - 1;
       }
 
-      // Get owner email via edge function
       const { data: usersData } = await supabase.functions.invoke('manage-admin', {
         body: { action: 'list_users' },
       });
@@ -102,7 +102,6 @@ export default function AdminShops() {
     });
 
     const allShops = await Promise.all(shopDataPromises);
-    // Filter out super admin's auto-created shop if it has no products
     setShops(allShops.filter(s => s.product_count > 0 || s.total_sales > 0 || s.staff_count > 0 || allShops.length <= 1));
     if (allShops.length === 0) setShops(allShops);
     setLoading(false);
@@ -114,15 +113,12 @@ export default function AdminShops() {
       return;
     }
 
-    const [salesRes, staffRes, productsRes] = await Promise.all([
+    const [salesRes, productsRes] = await Promise.all([
       supabase.from('sales')
-        .select('id, receipt_id, total, payment_method, sold_by_name, created_at, customer_name')
+        .select('id, receipt_id, total, payment_method, sold_by_name, created_at, customer_name, paid, balance')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
-        .limit(20),
-      supabase.functions.invoke('manage-admin', {
-        body: { action: 'list_users' },
-      }),
+        .limit(50),
       supabase.from('products')
         .select('id, name, quantity, selling_price, low_stock_level')
         .eq('user_id', userId)
@@ -144,17 +140,37 @@ export default function AdminShops() {
         .eq('org_id', orgData.id);
 
       const memberIds = (members || []).map(m => m.user_id);
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('user_id, name, role')
-        .in('user_id', memberIds);
+      if (memberIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('user_id, name, role')
+          .in('user_id', memberIds);
 
-      staffList = (profiles || []).map(p => {
-        const member = members?.find(m => m.user_id === p.user_id);
-        const authUser = staffRes.data?.users?.find((u: any) => u.id === p.user_id);
-        return { ...p, email: authUser?.email, org_role: member?.role };
-      });
+        const { data: usersData } = await supabase.functions.invoke('manage-admin', {
+          body: { action: 'list_users' },
+        });
+
+        staffList = (profiles || []).map(p => {
+          const member = members?.find(m => m.user_id === p.user_id);
+          const authUser = usersData?.users?.find((u: any) => u.id === p.user_id);
+          return { ...p, email: authUser?.email, org_role: member?.role };
+        });
+      }
     }
+
+    // Staff performance
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todaySales = (salesRes.data || []).filter(s => new Date(s.created_at) >= today);
+    const perfMap = new Map<string, { name: string; revenue: number; transactions: number }>();
+    todaySales.forEach(s => {
+      const name = s.sold_by_name || 'Owner';
+      const existing = perfMap.get(name) || { name, revenue: 0, transactions: 0 };
+      existing.revenue += Number(s.total);
+      existing.transactions += 1;
+      perfMap.set(name, existing);
+    });
+    const staffPerformance = Array.from(perfMap.values()).sort((a, b) => b.revenue - a.revenue);
 
     setShopDetails(prev => ({
       ...prev,
@@ -162,20 +178,45 @@ export default function AdminShops() {
         sales: salesRes.data || [],
         staff: staffList,
         products: productsRes.data || [],
+        staffPerformance,
       },
     }));
     setExpandedShop(userId);
   };
 
-  const deleteShopData = async (userId: string) => {
-    if (!confirm('Delete ALL data for this shop? Products, sales, customers, loans. This cannot be undone.')) return;
-
-    const { error } = await supabase.functions.invoke('manage-admin', {
-      body: { action: 'reset_shop_data', userId },
+  const viewReceipt = async (sale: any) => {
+    const { data } = await supabase
+      .from('sale_items')
+      .select('product_name, quantity, price, total')
+      .eq('sale_id', sale.id);
+    setReceiptSale({
+      ...sale,
+      items: (data || []).map(i => ({
+        productName: i.product_name,
+        quantity: i.quantity,
+        price: i.price,
+        total: i.total,
+      })),
     });
+  };
 
-    // Use direct admin deletion since we have super admin RLS
-    // Delete in order: sale_items, loan_payments, sales, loans, stock_entries, products, customers
+  const deleteStaffFromShop = async (shopUserId: string, staffUserId: string, staffName: string) => {
+    if (!confirm(`Remove ${staffName} from this shop?`)) return;
+    const { data, error } = await supabase.functions.invoke('manage-admin', {
+      body: { action: 'admin_delete_staff', shopOwnerId: shopUserId, staffUserId },
+    });
+    if (error || data?.error) {
+      toast.error(data?.error || 'Failed to remove staff');
+      return;
+    }
+    toast.success('Staff removed');
+    setShopDetails(prev => { const n = { ...prev }; delete n[shopUserId]; return n; });
+    await loadShops();
+  };
+
+  const deleteShopData = async (userId: string) => {
+    if (!confirm('Delete ALL data for this shop? This cannot be undone.')) return;
+
     const { data: sales } = await supabase.from('sales').select('id').eq('user_id', userId);
     if (sales) {
       for (const s of sales) {
@@ -199,7 +240,9 @@ export default function AdminShops() {
     await loadShops();
   };
 
-  const filtered = shops.filter(s =>
+  // Sort shops by today's sales (best performing first)
+  const sorted = [...shops].sort((a, b) => b.today_sales - a.today_sales);
+  const filtered = sorted.filter(s =>
     s.name.toLowerCase().includes(search.toLowerCase()) ||
     s.owner_name.toLowerCase().includes(search.toLowerCase()) ||
     s.owner_email.toLowerCase().includes(search.toLowerCase())
@@ -208,6 +251,8 @@ export default function AdminShops() {
   if (loading) {
     return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
   }
+
+  const bestShop = sorted.length > 0 ? sorted[0] : null;
 
   return (
     <div className="space-y-4">
@@ -219,12 +264,7 @@ export default function AdminShops() {
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          placeholder="Search shops, owners..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="pl-10"
-        />
+        <Input placeholder="Search shops, owners..." value={search} onChange={e => setSearch(e.target.value)} className="pl-10" />
       </div>
 
       {/* Summary cards */}
@@ -247,8 +287,20 @@ export default function AdminShops() {
         </div>
       </div>
 
+      {/* Best Performing Shop */}
+      {bestShop && bestShop.today_sales > 0 && (
+        <div className="rounded-xl border border-accent/30 bg-accent/5 p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Trophy size={16} className="text-accent" />
+            <span className="text-sm font-semibold">Top Performing Shop Today</span>
+          </div>
+          <p className="text-lg font-bold">{bestShop.name}</p>
+          <p className="text-sm text-muted-foreground">Le {bestShop.today_sales.toLocaleString()} in sales today · Owner: {bestShop.owner_name}</p>
+        </div>
+      )}
+
       <div className="space-y-3">
-        {filtered.map(shop => (
+        {filtered.map((shop, shopIdx) => (
           <div key={shop.user_id} className="rounded-xl border bg-card overflow-hidden">
             <div
               className="p-4 cursor-pointer hover:bg-muted/30 transition-colors"
@@ -257,66 +309,46 @@ export default function AdminShops() {
               <div className="flex items-start justify-between">
                 <div>
                   <div className="flex items-center gap-2">
+                    {shopIdx === 0 && shop.today_sales > 0 && <Trophy size={14} className="text-accent" />}
                     <h3 className="font-semibold text-lg">{shop.name}</h3>
-                    <Badge variant="outline" className="text-xs">
-                      {shop.account_type}
-                    </Badge>
+                    <Badge variant="outline" className="text-xs">{shop.account_type}</Badge>
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    Owner: {shop.owner_name} ({shop.owner_email})
-                  </p>
-                  {shop.org_name && (
-                    <p className="text-xs text-muted-foreground">Org: {shop.org_name}</p>
-                  )}
+                  <p className="text-sm text-muted-foreground">Owner: {shop.owner_name} ({shop.owner_email})</p>
+                  {shop.org_name && <p className="text-xs text-muted-foreground">Org: {shop.org_name}</p>}
                 </div>
-                <div className="flex items-center gap-2">
-                  {expandedShop === shop.user_id ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                </div>
+                {expandedShop === shop.user_id ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
               </div>
 
               <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mt-3">
-                <div className="flex items-center gap-1 text-xs">
-                  <Package className="w-3 h-3 text-muted-foreground" />
-                  <span>{shop.product_count} products</span>
-                </div>
-                <div className="flex items-center gap-1 text-xs">
-                  <Users className="w-3 h-3 text-muted-foreground" />
-                  <span>{shop.staff_count} staff</span>
-                </div>
-                <div className="flex items-center gap-1 text-xs">
-                  <ShoppingCart className="w-3 h-3 text-muted-foreground" />
-                  <span>{shop.total_customers} customers</span>
-                </div>
-                <div className="flex items-center gap-1 text-xs">
-                  <TrendingUp className="w-3 h-3 text-accent" />
-                  <span className="text-accent">Le {shop.today_sales.toLocaleString()} today</span>
-                </div>
-                <div className="flex items-center gap-1 text-xs">
-                  <ShoppingCart className="w-3 h-3 text-primary" />
-                  <span>Le {shop.total_sales.toLocaleString()} total</span>
-                </div>
-                <div className="flex items-center gap-1 text-xs">
-                  <CreditCard className="w-3 h-3 text-destructive" />
-                  <span className="text-destructive">Le {shop.outstanding_loans.toLocaleString()} debt</span>
-                </div>
+                <div className="flex items-center gap-1 text-xs"><Package className="w-3 h-3 text-muted-foreground" /><span>{shop.product_count} products</span></div>
+                <div className="flex items-center gap-1 text-xs"><Users className="w-3 h-3 text-muted-foreground" /><span>{shop.staff_count} staff</span></div>
+                <div className="flex items-center gap-1 text-xs"><ShoppingCart className="w-3 h-3 text-muted-foreground" /><span>{shop.total_customers} customers</span></div>
+                <div className="flex items-center gap-1 text-xs"><TrendingUp className="w-3 h-3 text-accent" /><span className="text-accent">Le {shop.today_sales.toLocaleString()} today</span></div>
+                <div className="flex items-center gap-1 text-xs"><ShoppingCart className="w-3 h-3 text-primary" /><span>Le {shop.total_sales.toLocaleString()} total</span></div>
+                <div className="flex items-center gap-1 text-xs"><CreditCard className="w-3 h-3 text-destructive" /><span className="text-destructive">Le {shop.outstanding_loans.toLocaleString()} debt</span></div>
               </div>
             </div>
 
             {expandedShop === shop.user_id && shopDetails[shop.user_id] && (
               <div className="border-t p-4 space-y-4 bg-muted/10">
-                {/* Staff */}
-                {shopDetails[shop.user_id].staff.length > 0 && (
+                {/* Staff Performance */}
+                {shopDetails[shop.user_id].staffPerformance?.length > 0 && (
                   <div>
                     <h4 className="font-medium text-sm mb-2 flex items-center gap-1">
-                      <Users className="w-4 h-4" /> Staff Members
+                      <Trophy className="w-4 h-4 text-accent" /> Staff Performance Today
                     </h4>
                     <div className="grid gap-1">
-                      {shopDetails[shop.user_id].staff.map((s: any) => (
-                        <div key={s.user_id} className="flex items-center justify-between text-sm py-1 px-2 rounded bg-background">
-                          <span>{s.name}</span>
+                      {shopDetails[shop.user_id].staffPerformance.map((sp: any, idx: number) => (
+                        <div key={sp.name} className="flex items-center justify-between text-sm py-1 px-2 rounded bg-background">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">{s.email}</span>
-                            <Badge variant="outline" className="text-xs">{s.role}</Badge>
+                            <span className={`w-5 h-5 rounded-full text-xs flex items-center justify-center font-bold ${
+                              idx === 0 ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground'
+                            }`}>{idx + 1}</span>
+                            <span>{sp.name}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-medium">Le {sp.revenue.toLocaleString()}</span>
+                            <span className="text-xs text-muted-foreground ml-2">({sp.transactions} sales)</span>
                           </div>
                         </div>
                       ))}
@@ -324,26 +356,54 @@ export default function AdminShops() {
                   </div>
                 )}
 
-                {/* Recent Sales */}
+                {/* Staff */}
+                {shopDetails[shop.user_id].staff.length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-2 flex items-center gap-1"><Users className="w-4 h-4" /> Staff Members</h4>
+                    <div className="grid gap-1">
+                      {shopDetails[shop.user_id].staff.map((s: any) => (
+                        <div key={s.user_id} className="flex items-center justify-between text-sm py-1 px-2 rounded bg-background">
+                          <div className="flex items-center gap-2">
+                            <UserCircle size={14} className="text-muted-foreground" />
+                            <span>{s.name}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">{s.email}</span>
+                            <Badge variant="outline" className="text-xs">{s.role}</Badge>
+                            {s.user_id !== shop.user_id && (
+                              <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive"
+                                onClick={(e) => { e.stopPropagation(); deleteStaffFromShop(shop.user_id, s.user_id, s.name); }}>
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recent Sales with receipt view */}
                 <div>
-                  <h4 className="font-medium text-sm mb-2 flex items-center gap-1">
-                    <ShoppingCart className="w-4 h-4" /> Recent Sales
-                  </h4>
+                  <h4 className="font-medium text-sm mb-2 flex items-center gap-1"><ShoppingCart className="w-4 h-4" /> All Transactions</h4>
                   {shopDetails[shop.user_id].sales.length === 0 ? (
                     <p className="text-xs text-muted-foreground">No sales yet</p>
                   ) : (
-                    <div className="space-y-1 max-h-48 overflow-y-auto">
+                    <div className="space-y-1 max-h-64 overflow-y-auto">
                       {shopDetails[shop.user_id].sales.map((s: any) => (
-                        <div key={s.id} className="flex items-center justify-between text-sm py-1 px-2 rounded bg-background">
-                          <div>
+                        <div key={s.id} className="flex items-center justify-between text-sm py-1.5 px-2 rounded bg-background hover:bg-muted/50 cursor-pointer"
+                          onClick={() => viewReceipt(s)}>
+                          <div className="min-w-0">
                             <span className="font-mono text-xs">{s.receipt_id}</span>
                             <span className="text-xs text-muted-foreground ml-2">
                               {s.customer_name} · by {s.sold_by_name || 'Owner'}
                             </span>
+                            <p className="text-xs text-muted-foreground">{format(new Date(s.created_at), 'dd MMM yyyy HH:mm')}</p>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 shrink-0">
                             <Badge variant="outline" className="text-xs">{s.payment_method}</Badge>
                             <span className="font-medium">Le {Number(s.total).toLocaleString()}</span>
+                            <ReceiptIcon size={12} className="text-muted-foreground" />
                           </div>
                         </div>
                       ))}
@@ -384,6 +444,17 @@ export default function AdminShops() {
           </p>
         )}
       </div>
+
+      {/* Receipt Dialog */}
+      <Dialog open={!!receiptSale} onOpenChange={(o) => !o && setReceiptSale(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><ReceiptIcon size={18} /> Receipt</DialogTitle>
+          </DialogHeader>
+          {receiptSale && <Receipt sale={receiptSale} />}
+          <Button onClick={() => window.print()} variant="outline" className="no-print">Print</Button>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

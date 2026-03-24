@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { ShoppingCart, ArrowRight, Play } from 'lucide-react';
+import { ShoppingCart, ArrowRight, Play, Users } from 'lucide-react';
 import AnimatedChat from '@/components/landing/AnimatedChat';
 import LiveMetrics from '@/components/landing/LiveMetrics';
 import FeatureCards from '@/components/landing/FeatureCards';
@@ -65,6 +65,7 @@ export default function Landing() {
             <span className="font-bold text-lg">{footer?.title || 'DESWIFE'}</span>
           </div>
           <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={() => navigate('/staff-login')}>Staff Login</Button>
             <Button variant="ghost" onClick={() => navigate('/auth')}>Log In</Button>
             <Button onClick={() => navigate('/auth?mode=signup')} className="gap-2">
               Get Started <ArrowRight className="w-4 h-4" />
@@ -106,8 +107,11 @@ export default function Landing() {
                   <Button size="lg" onClick={() => navigate('/auth?mode=signup')} className="gap-2 text-lg h-14 px-8">
                     Get Started Free <ArrowRight className="w-5 h-5" />
                   </Button>
+                  <Button size="lg" variant="outline" onClick={() => navigate('/staff-login')} className="gap-2 text-lg h-14 px-8">
+                    <Users className="w-5 h-5" /> Staff Login
+                  </Button>
                   {visible('demo_video') && demoVideo?.video_url && (
-                    <Button size="lg" variant="outline" className="gap-2 text-lg h-14 px-8" onClick={() => {
+                    <Button size="lg" variant="ghost" className="gap-2 text-lg h-14 px-8" onClick={() => {
                       const el = document.getElementById('demo-video-section');
                       el?.scrollIntoView({ behavior: 'smooth' });
                     }}>
