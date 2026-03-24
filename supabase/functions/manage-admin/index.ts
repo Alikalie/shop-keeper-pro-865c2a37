@@ -118,6 +118,13 @@ Deno.serve(async (req) => {
         });
       }
 
+      recordFailedAttempt(clientIp);
+      return new Response(JSON.stringify({ error: "Invalid admin credentials" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Helper: get authenticated user
     const getAuthUser = async () => {
       const authHeader = req.headers.get("Authorization");
