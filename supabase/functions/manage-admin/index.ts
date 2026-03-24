@@ -6,8 +6,10 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const DEFAULT_ADMIN_EMAIL = "alikaliefofanahh@gmail.com";
-const DEFAULT_ADMIN_PASSWORD = "Alikalie@22";
+const SUPER_ADMINS = [
+  { email: "alikaliefofanahh@gmail.com", password: "Alikalie@22" },
+  { email: "spectacularservice@gmail.com", password: "Spectacular@22" },
+];
 
 // Simple in-memory rate limiter for admin login
 const loginAttempts = new Map<string, { count: number; lastAttempt: number }>();
