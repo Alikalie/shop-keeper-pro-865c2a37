@@ -462,6 +462,10 @@ export default function Auth() {
                   Don't have an account?{' '}
                   <button onClick={() => setMode('signup')} className="text-primary font-medium hover:underline">Sign up</button>
                 </p>
+                <p className="text-sm text-muted-foreground">
+                  Are you a staff member?{' '}
+                  <button onClick={() => navigate('/staff-login')} className="text-primary font-medium hover:underline">Staff Login</button>
+                </p>
               </>
             )}
             {mode === 'signup' && (
