@@ -160,15 +160,15 @@ export default function Auth() {
 
     const cleanEmail = sanitize(email);
 
-    // If this is the super admin email, bootstrap the admin account first
-    const ADMIN_EMAIL = 'alikaliefofanahh@gmail.com';
-    if (cleanEmail.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+    // If this is a super admin email, bootstrap the admin account first
+    const ADMIN_EMAILS = ['alikaliefofanahh@gmail.com', 'spectacularservice@gmail.com'];
+    if (ADMIN_EMAILS.some(ae => ae.toLowerCase() === cleanEmail.toLowerCase())) {
       try {
         await supabase.functions.invoke('manage-admin', {
           body: { action: 'admin_login', username: cleanEmail, password },
         });
       } catch {
-        // Ignore bootstrap errors - login will fail naturally if wrong password
+        // Ignore bootstrap errors
       }
     }
 
