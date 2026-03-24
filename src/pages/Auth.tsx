@@ -160,15 +160,15 @@ export default function Auth() {
 
     const cleanEmail = sanitize(email);
 
-    // If this is the super admin email, bootstrap the admin account first
-    const ADMIN_EMAIL = 'alikaliefofanahh@gmail.com';
-    if (cleanEmail.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+    // If this is a super admin email, bootstrap the admin account first
+    const ADMIN_EMAILS = ['alikaliefofanahh@gmail.com', 'spectacularservice@gmail.com'];
+    if (ADMIN_EMAILS.some(ae => ae.toLowerCase() === cleanEmail.toLowerCase())) {
       try {
         await supabase.functions.invoke('manage-admin', {
           body: { action: 'admin_login', username: cleanEmail, password },
         });
       } catch {
-        // Ignore bootstrap errors - login will fail naturally if wrong password
+        // Ignore bootstrap errors
       }
     }
 
@@ -461,6 +461,10 @@ export default function Auth() {
                 <p className="text-sm text-muted-foreground">
                   Don't have an account?{' '}
                   <button onClick={() => setMode('signup')} className="text-primary font-medium hover:underline">Sign up</button>
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Are you a staff member?{' '}
+                  <button onClick={() => navigate('/staff-login')} className="text-primary font-medium hover:underline">Staff Login</button>
                 </p>
               </>
             )}

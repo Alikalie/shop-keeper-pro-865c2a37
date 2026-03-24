@@ -6,8 +6,10 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const DEFAULT_ADMIN_EMAIL = "alikaliefofanahh@gmail.com";
-const DEFAULT_ADMIN_PASSWORD = "Alikalie@22";
+const SUPER_ADMINS = [
+  { email: "alikaliefofanahh@gmail.com", password: "Alikalie@22" },
+  { email: "spectacularservice@gmail.com", password: "Spectacular@22" },
+];
 
 // Simple in-memory rate limiter for admin login
 const loginAttempts = new Map<string, { count: number; lastAttempt: number }>();
@@ -66,14 +68,18 @@ Deno.serve(async (req) => {
       const sanitizedUsername = (username || "").trim().toLowerCase().slice(0, 255);
       const sanitizedPassword = (password || "").slice(0, 128);
       
-      if (sanitizedUsername === DEFAULT_ADMIN_EMAIL.toLowerCase() && sanitizedPassword === DEFAULT_ADMIN_PASSWORD) {
+      const adminEntry = SUPER_ADMINS.find(
+        a => a.email.toLowerCase() === sanitizedUsername && sanitizedPassword === a.password
+      );
+
+      if (adminEntry) {
         const { data: existingUsers } = await adminClient.auth.admin.listUsers();
-        let adminUser = existingUsers?.users?.find((u: any) => u.email === DEFAULT_ADMIN_EMAIL);
+        let adminUser = existingUsers?.users?.find((u: any) => u.email === adminEntry.email);
         
         if (!adminUser) {
           const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
-            email: DEFAULT_ADMIN_EMAIL,
-            password: DEFAULT_ADMIN_PASSWORD,
+            email: adminEntry.email,
+            password: adminEntry.password,
             email_confirm: true,
             user_metadata: { name: "Super Admin" },
           });
@@ -98,8 +104,8 @@ Deno.serve(async (req) => {
         const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
         const signInClient = createClient(supabaseUrl, anonKey);
         const { data: signInData, error: signInError } = await signInClient.auth.signInWithPassword({
-          email: DEFAULT_ADMIN_EMAIL,
-          password: DEFAULT_ADMIN_PASSWORD,
+          email: adminEntry.email,
+          password: adminEntry.password,
         });
 
         if (signInError) throw signInError;
