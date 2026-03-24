@@ -711,6 +711,40 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Admin delete staff from a shop
+    if (action === "admin_delete_staff") {
+      const { shopOwnerId, staffUserId } = body;
+      if (!shopOwnerId || !staffUserId) {
+        return new Response(JSON.stringify({ error: "Shop owner ID and staff user ID required" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Find the org
+      const { data: org } = await adminClient
+        .from("organizations")
+        .select("id")
+        .eq("owner_id", shopOwnerId)
+        .maybeSingle();
+
+      if (org) {
+        await adminClient
+          .from("org_members")
+          .delete()
+          .eq("org_id", org.id)
+          .eq("user_id", staffUserId);
+      }
+
+      await adminClient
+        .from("profiles")
+        .update({ org_id: null })
+        .eq("user_id", staffUserId);
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     return new Response(JSON.stringify({ error: "Invalid action" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
