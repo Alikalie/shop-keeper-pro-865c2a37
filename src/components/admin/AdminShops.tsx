@@ -37,6 +37,7 @@ export default function AdminShops() {
   const [expandedShop, setExpandedShop] = useState<string | null>(null);
   const [shopDetails, setShopDetails] = useState<Record<string, any>>({});
   const [receiptSale, setReceiptSale] = useState<any>(null);
+  const [receiptOwnerId, setReceiptOwnerId] = useState<string | null>(null);
 
   useEffect(() => {
     loadShops();
