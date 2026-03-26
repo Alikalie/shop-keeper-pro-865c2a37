@@ -453,7 +453,7 @@ export default function AdminShops() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><ReceiptIcon size={18} /> Receipt</DialogTitle>
           </DialogHeader>
-          {receiptSale && <Receipt sale={receiptSale} />}
+          {receiptSale && <Receipt sale={receiptSale} shopOwnerId={receiptOwnerId || undefined} />}
           <Button onClick={() => window.print()} variant="outline" className="no-print">Print</Button>
         </DialogContent>
       </Dialog>
