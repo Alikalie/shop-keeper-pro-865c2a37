@@ -25,19 +25,23 @@ interface SaleData {
 
 interface ReceiptProps { 
   sale: SaleData;
+  /** Override owner ID for admin viewing other shops' receipts */
+  shopOwnerId?: string;
 }
 
-export default function Receipt({ sale }: ReceiptProps) {
-  const { ownerId } = useOwnerId();
+export default function Receipt({ sale, shopOwnerId }: ReceiptProps) {
+  const { ownerId: hookOwnerId } = useOwnerId();
+  const resolvedOwnerId = shopOwnerId || hookOwnerId;
   const [shop, setShop] = useState({ name: 'My Shop', address: '', phone: '', footerMessage: 'Thank you for your patronage!', logoUrl: '' });
+  const [loaded, setLoaded] = useState(false);
   
   useEffect(() => {
     const fetchShop = async () => {
-      if (!ownerId) return;
+      if (!resolvedOwnerId) return;
       const { data } = await supabase
         .from('shop_settings')
         .select('name, address, phone, footer_message, logo_url')
-        .eq('user_id', ownerId)
+        .eq('user_id', resolvedOwnerId)
         .maybeSingle();
       if (data) {
         setShop({
@@ -48,9 +52,10 @@ export default function Receipt({ sale }: ReceiptProps) {
           logoUrl: data.logo_url || '',
         });
       }
+      setLoaded(true);
     };
     fetchShop();
-  }, [ownerId]);
+  }, [resolvedOwnerId]);
 
   const saleDate = new Date(sale.created_at);
 
@@ -59,7 +64,7 @@ export default function Receipt({ sale }: ReceiptProps) {
          style={{ width: '190mm', maxHeight: '138mm', maxWidth: '100%' }}>
       <div className="flex flex-col h-full">
         {/* Header */}
-        <div className="text-center mb-4 border-b-2 border-foreground pb-3">
+        <div className="text-center mb-4 border-b-2 border-black pb-3">
           {shop.logoUrl && (
             <img src={shop.logoUrl} alt={shop.name} className="mx-auto mb-2 max-h-12 max-w-[120px] object-contain" />
           )}
@@ -82,15 +87,15 @@ export default function Receipt({ sale }: ReceiptProps) {
           </div>
         </div>
 
-        <div className="border-t-2 border-dashed border-foreground/40 my-2" />
+        <div className="border-t-2 border-dashed border-black/40 my-2" />
 
         {/* Items table */}
         <div className="flex-1">
           <div className="grid grid-cols-[2fr_auto_auto_auto] gap-x-4 text-sm">
-            <p className="font-bold border-b border-foreground/30 pb-1">Item</p>
-            <p className="font-bold text-right border-b border-foreground/30 pb-1">Qty</p>
-            <p className="font-bold text-right border-b border-foreground/30 pb-1">Price</p>
-            <p className="font-bold text-right border-b border-foreground/30 pb-1">Total</p>
+            <p className="font-bold border-b border-black/30 pb-1">Item</p>
+            <p className="font-bold text-right border-b border-black/30 pb-1">Qty</p>
+            <p className="font-bold text-right border-b border-black/30 pb-1">Price</p>
+            <p className="font-bold text-right border-b border-black/30 pb-1">Total</p>
             {sale.items.map((item, i) => (
               <div key={i} className="contents">
                 <p className="truncate py-0.5">{item.productName}</p>
@@ -102,13 +107,13 @@ export default function Receipt({ sale }: ReceiptProps) {
           </div>
         </div>
 
-        <div className="border-t-2 border-dashed border-foreground/40 my-2" />
+        <div className="border-t-2 border-dashed border-black/40 my-2" />
 
         {/* Totals */}
         <div className="grid grid-cols-2 gap-4">
           <div />
           <div className="space-y-1 text-sm">
-            <div className="flex justify-between font-bold text-base border-b border-foreground/30 pb-1">
+            <div className="flex justify-between font-bold text-base border-b border-black/30 pb-1">
               <span>TOTAL:</span>
               <span>Le {sale.total.toLocaleString()}</span>
             </div>
@@ -125,7 +130,7 @@ export default function Receipt({ sale }: ReceiptProps) {
           </div>
         </div>
 
-        <div className="border-t-2 border-dashed border-foreground/40 my-2" />
+        <div className="border-t-2 border-dashed border-black/40 my-2" />
 
         {/* Footer */}
         <div className="text-center mt-2">

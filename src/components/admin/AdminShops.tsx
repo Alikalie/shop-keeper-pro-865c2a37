@@ -37,6 +37,7 @@ export default function AdminShops() {
   const [expandedShop, setExpandedShop] = useState<string | null>(null);
   const [shopDetails, setShopDetails] = useState<Record<string, any>>({});
   const [receiptSale, setReceiptSale] = useState<any>(null);
+  const [receiptOwnerId, setReceiptOwnerId] = useState<string | null>(null);
 
   useEffect(() => {
     loadShops();
@@ -184,11 +185,12 @@ export default function AdminShops() {
     setExpandedShop(userId);
   };
 
-  const viewReceipt = async (sale: any) => {
+  const viewReceipt = async (sale: any, shopUserId?: string) => {
     const { data } = await supabase
       .from('sale_items')
       .select('product_name, quantity, price, total')
       .eq('sale_id', sale.id);
+    setReceiptOwnerId(shopUserId || sale.user_id || null);
     setReceiptSale({
       ...sale,
       items: (data || []).map(i => ({
@@ -392,7 +394,7 @@ export default function AdminShops() {
                     <div className="space-y-1 max-h-64 overflow-y-auto">
                       {shopDetails[shop.user_id].sales.map((s: any) => (
                         <div key={s.id} className="flex items-center justify-between text-sm py-1.5 px-2 rounded bg-background hover:bg-muted/50 cursor-pointer"
-                          onClick={() => viewReceipt(s)}>
+                          onClick={() => viewReceipt(s, shop.user_id)}>
                           <div className="min-w-0">
                             <span className="font-mono text-xs">{s.receipt_id}</span>
                             <span className="text-xs text-muted-foreground ml-2">
@@ -451,7 +453,7 @@ export default function AdminShops() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><ReceiptIcon size={18} /> Receipt</DialogTitle>
           </DialogHeader>
-          {receiptSale && <Receipt sale={receiptSale} />}
+          {receiptSale && <Receipt sale={receiptSale} shopOwnerId={receiptOwnerId || undefined} />}
           <Button onClick={() => window.print()} variant="outline" className="no-print">Print</Button>
         </DialogContent>
       </Dialog>
