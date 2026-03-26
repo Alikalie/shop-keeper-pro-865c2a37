@@ -200,7 +200,6 @@ export default function AdminShops() {
         total: i.total,
       })),
     });
-    });
   };
 
   const deleteStaffFromShop = async (shopUserId: string, staffUserId: string, staffName: string) => {
