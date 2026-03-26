@@ -24,7 +24,7 @@ interface ShopSettings {
 const navItems = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, ownerOnly: false, adminOnly: false },
   { path: '/products', label: 'Products', icon: Package, ownerOnly: false, adminOnly: false },
-  { path: '/add-stock', label: 'Add Stock', icon: PlusCircle, ownerOnly: true, adminOnly: false },
+  { path: '/add-stock', label: 'Add Stock', icon: PlusCircle, ownerOnly: false, adminOnly: false },
   { path: '/pos', label: 'Sell (POS)', icon: ShoppingCart, ownerOnly: false, adminOnly: false },
   { path: '/sales-history', label: 'Sales History', icon: Receipt, ownerOnly: false, adminOnly: false },
   { path: '/customers', label: 'Customers', icon: Users, ownerOnly: false, adminOnly: false },

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
 import { useOwnerId } from '@/hooks/useOwnerId';
 import { format } from 'date-fns';
 
@@ -29,16 +28,15 @@ interface ReceiptProps {
 }
 
 export default function Receipt({ sale }: ReceiptProps) {
-  const { user } = useAuth();
   const { ownerId } = useOwnerId();
-  const [shop, setShop] = useState({ name: 'My Shop', address: '', phone: '', footerMessage: 'Thank you for your patronage!' });
+  const [shop, setShop] = useState({ name: 'My Shop', address: '', phone: '', footerMessage: 'Thank you for your patronage!', logoUrl: '' });
   
   useEffect(() => {
     const fetchShop = async () => {
       if (!ownerId) return;
       const { data } = await supabase
         .from('shop_settings')
-        .select('name, address, phone, footer_message')
+        .select('name, address, phone, footer_message, logo_url')
         .eq('user_id', ownerId)
         .maybeSingle();
       if (data) {
@@ -47,6 +45,7 @@ export default function Receipt({ sale }: ReceiptProps) {
           address: data.address || '',
           phone: data.phone || '',
           footerMessage: data.footer_message || 'Thank you for your patronage!',
+          logoUrl: data.logo_url || '',
         });
       }
     };
@@ -58,16 +57,18 @@ export default function Receipt({ sale }: ReceiptProps) {
   return (
     <div className="receipt-print border-2 border-black bg-white p-4 rounded font-mono text-[10px] leading-snug text-black"
          style={{ width: '190mm', maxHeight: '138mm', maxWidth: '100%' }}>
-      {/* A5 Landscape: fits within 210x148mm with margins */}
       <div className="flex flex-col h-full">
         {/* Header */}
         <div className="text-center mb-4 border-b-2 border-foreground pb-3">
+          {shop.logoUrl && (
+            <img src={shop.logoUrl} alt={shop.name} className="mx-auto mb-2 max-h-12 max-w-[120px] object-contain" />
+          )}
           <p className="font-bold text-lg tracking-wide">{shop.name}</p>
           {shop.address && <p className="text-sm">{shop.address}</p>}
           {shop.phone && <p className="text-sm">Tel: {shop.phone}</p>}
         </div>
 
-        {/* Receipt Info - two columns for landscape */}
+        {/* Receipt Info */}
         <div className="grid grid-cols-2 gap-4 mb-3">
           <div>
             <p><span className="font-semibold">Receipt:</span> {sale.receipt_id}</p>
