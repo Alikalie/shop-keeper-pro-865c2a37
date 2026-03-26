@@ -185,11 +185,12 @@ export default function AdminShops() {
     setExpandedShop(userId);
   };
 
-  const viewReceipt = async (sale: any) => {
+  const viewReceipt = async (sale: any, shopUserId?: string) => {
     const { data } = await supabase
       .from('sale_items')
       .select('product_name, quantity, price, total')
       .eq('sale_id', sale.id);
+    setReceiptOwnerId(shopUserId || sale.user_id || null);
     setReceiptSale({
       ...sale,
       items: (data || []).map(i => ({
@@ -198,6 +199,7 @@ export default function AdminShops() {
         price: i.price,
         total: i.total,
       })),
+    });
     });
   };
 
