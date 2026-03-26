@@ -394,7 +394,7 @@ export default function AdminShops() {
                     <div className="space-y-1 max-h-64 overflow-y-auto">
                       {shopDetails[shop.user_id].sales.map((s: any) => (
                         <div key={s.id} className="flex items-center justify-between text-sm py-1.5 px-2 rounded bg-background hover:bg-muted/50 cursor-pointer"
-                          onClick={() => viewReceipt(s)}>
+                          onClick={() => viewReceipt(s, shop.user_id)}>
                           <div className="min-w-0">
                             <span className="font-mono text-xs">{s.receipt_id}</span>
                             <span className="text-xs text-muted-foreground ml-2">
