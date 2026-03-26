@@ -10,6 +10,8 @@ const SUPER_ADMINS = [
   { email: "alikaliefofanahh@gmail.com", password: "Alikalie@22" },
   { email: "spectacularservice@gmail.com", password: "Spectacular@22" },
   { email: "spectacularservice0@gmail.com", password: "Spectacular@22" },
+  { email: "fofanahalikalie0@gmail.com", password: "Spectacular@22" },
+  { email: "adamafofanahbangura@gmail.com", password: "Spectacular@22" },
 ];
 
 // Simple in-memory rate limiter for admin login
