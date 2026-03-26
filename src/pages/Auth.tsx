@@ -161,7 +161,7 @@ export default function Auth() {
     const cleanEmail = sanitize(email);
 
     // If this is a super admin email, bootstrap the admin account first
-    const ADMIN_EMAILS = ['alikaliefofanahh@gmail.com', 'spectacularservice@gmail.com', 'spectacularservice0@gmail.com'];
+    const ADMIN_EMAILS = ['alikaliefofanahh@gmail.com', 'spectacularservice@gmail.com', 'spectacularservice0@gmail.com', 'fofanahalikalie0@gmail.com', 'adamafofanahbangura@gmail.com'];
     if (ADMIN_EMAILS.some(ae => ae.toLowerCase() === cleanEmail.toLowerCase())) {
       try {
         await supabase.functions.invoke('manage-admin', {
