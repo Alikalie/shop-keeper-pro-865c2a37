@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Settings, Loader2, AlertTriangle, Trash2 } from 'lucide-react';
+import { Settings, Loader2, AlertTriangle, Trash2, Upload, X } from 'lucide-react';
 
 interface ShopSettingsData {
   id: string;
@@ -17,6 +17,7 @@ interface ShopSettingsData {
   address: string;
   phone: string;
   footer_message: string;
+  logo_url: string;
 }
 
 export default function ShopSettings() {
@@ -29,6 +30,8 @@ export default function ShopSettings() {
   const [resetConfirm, setResetConfirm] = useState('');
   const [resetting, setResetting] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -49,6 +52,7 @@ export default function ShopSettings() {
           address: data?.address || '',
           phone: data?.phone || '',
           footer_message: data?.footer_message || 'Thank you for your patronage!',
+          logo_url: data?.logo_url || '',
         });
       } catch {
         setForm({
@@ -57,12 +61,53 @@ export default function ShopSettings() {
           address: '',
           phone: '',
           footer_message: 'Thank you for your patronage!',
+          logo_url: '',
         });
       }
       setLoading(false);
     };
     if (ownerId && user) fetchSettings();
   }, [ownerId, user]);
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !ownerId) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload an image file');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Image must be under 2MB');
+      return;
+    }
+
+    setUploading(true);
+    const ext = file.name.split('.').pop();
+    const path = `${ownerId}/logo.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('shop-logos')
+      .upload(path, file, { upsert: true });
+
+    if (uploadError) {
+      toast.error('Failed to upload logo');
+      setUploading(false);
+      return;
+    }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('shop-logos')
+      .getPublicUrl(path);
+
+    setForm(prev => prev ? { ...prev, logo_url: publicUrl } : prev);
+    setUploading(false);
+    toast.success('Logo uploaded');
+  };
+
+  const removeLogo = () => {
+    setForm(prev => prev ? { ...prev, logo_url: '' } : prev);
+  };
 
   const handleSave = async () => {
     if (!form?.name) { toast.error('Shop name is required'); return; }
@@ -74,6 +119,7 @@ export default function ShopSettings() {
       address: form.address,
       phone: form.phone,
       footer_message: form.footer_message,
+      logo_url: form.logo_url || null,
     };
 
     let error;
@@ -102,8 +148,6 @@ export default function ShopSettings() {
 
     setResetting(true);
     try {
-      // Delete in order: sale_items -> sales -> loan_payments -> loans -> stock_entries -> products -> customers
-      // We use the edge function for this to bypass RLS with service role
       const { data, error } = await supabase.functions.invoke('manage-admin', {
         body: { action: 'reset_shop_data' },
       });
@@ -139,6 +183,47 @@ export default function ShopSettings() {
           <h1 className="text-2xl font-bold">Shop Settings</h1>
         </div>
         <div className="bg-card rounded-xl border p-5 space-y-4">
+          {/* Logo Upload */}
+          <div>
+            <Label>Shop Logo (optional)</Label>
+            <div className="mt-2 flex items-center gap-4">
+              {form.logo_url ? (
+                <div className="relative">
+                  <img src={form.logo_url} alt="Shop logo" className="w-20 h-20 rounded-lg object-contain border bg-background" />
+                  <button
+                    onClick={removeLogo}
+                    className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ) : (
+                <div className="w-20 h-20 rounded-lg border-2 border-dashed border-muted-foreground/30 flex items-center justify-center text-muted-foreground">
+                  <Upload size={24} />
+                </div>
+              )}
+              <div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleLogoUpload}
+                  className="hidden"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                >
+                  {uploading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Upload size={14} className="mr-1" />}
+                  {form.logo_url ? 'Change' : 'Upload'}
+                </Button>
+                <p className="text-xs text-muted-foreground mt-1">Max 2MB, PNG/JPG</p>
+              </div>
+            </div>
+          </div>
+
           <div><Label>Shop Name *</Label><Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
           <div><Label>Address</Label><Input value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div>
           <div><Label>Phone</Label><Input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /></div>
@@ -149,7 +234,6 @@ export default function ShopSettings() {
           </Button>
         </div>
 
-        {/* Reset / Delete Shop Data - Only for owners */}
         {isOwner && (
           <div className="mt-6 bg-card rounded-xl border border-destructive/30 p-5 space-y-3">
             <div className="flex items-center gap-2 text-destructive">
