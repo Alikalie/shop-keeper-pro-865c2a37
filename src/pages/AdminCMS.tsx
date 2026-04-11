@@ -163,22 +163,25 @@ export default function AdminCMS() {
     setUploading(null);
   };
 
-  const addAdmin = async () => {
-    if (!newAdminEmail) return;
-    setAddingAdmin(true);
-
+  const addAdminByEmail = async (targetEmail: string) => {
     const { data, error } = await supabase.functions.invoke('manage-admin', {
-      body: { action: 'add_admin', email: newAdminEmail },
+      body: { action: 'add_admin', email: targetEmail },
     });
 
     if (error || data?.error) {
-      toast.error(data?.error || 'Failed to add admin');
+      toast.error(data?.error || 'Failed to promote user');
     } else {
-      toast.success('Super admin added');
-      setNewAdminEmail('');
-      setAdminDialogOpen(false);
+      toast.success(`${targetEmail} promoted to Super Admin`);
       await loadData();
     }
+  };
+
+  const addAdmin = async () => {
+    if (!newAdminEmail) return;
+    setAddingAdmin(true);
+    await addAdminByEmail(newAdminEmail);
+    setNewAdminEmail('');
+    setAdminDialogOpen(false);
     setAddingAdmin(false);
   };
 
