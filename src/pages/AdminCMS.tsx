@@ -403,24 +403,41 @@ export default function AdminCMS() {
           <TabsContent value="users" className="space-y-4">
             <h2 className="text-xl font-bold flex items-center gap-2"><Users className="w-5 h-5" /> All Registered Users ({users.length})</h2>
             <div className="space-y-2">
-              {users.map(u => (
-                <div key={u.id} className="rounded-xl border bg-card p-4 flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">{u.name}</p>
-                    <p className="text-xs text-muted-foreground">{u.email}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Joined {new Date(u.created_at).toLocaleDateString()}
-                    </p>
+              {users.map(u => {
+                const isCurrentAdmin = admins.some(a => a.user_id === u.id);
+                return (
+                  <div key={u.id} className="rounded-xl border bg-card p-4 flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{u.name}</p>
+                        {isCurrentAdmin && <Badge className="bg-primary/10 text-primary text-xs">Super Admin</Badge>}
+                      </div>
+                      <p className="text-xs text-muted-foreground">{u.email}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Joined {new Date(u.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {u.id !== user?.id && (
+                        <>
+                          {isCurrentAdmin ? (
+                            <Button size="sm" variant="outline" onClick={() => removeAdmin(u.email)}>
+                              Demote
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="secondary" onClick={() => addAdminByEmail(u.email)}>
+                              <Shield className="w-3 h-3 mr-1" /> Promote
+                            </Button>
+                          )}
+                          <Button size="sm" variant="destructive" onClick={() => deleteUser(u.id)}>
+                            <Trash2 className="w-3 h-3 mr-1" /> Delete
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {u.id !== user?.id && (
-                      <Button size="sm" variant="destructive" onClick={() => deleteUser(u.id)}>
-                        <Trash2 className="w-3 h-3 mr-1" /> Delete
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               {users.length === 0 && <p className="text-center py-8 text-muted-foreground">No users found</p>}
             </div>
           </TabsContent>
