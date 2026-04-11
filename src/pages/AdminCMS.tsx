@@ -163,22 +163,25 @@ export default function AdminCMS() {
     setUploading(null);
   };
 
-  const addAdmin = async () => {
-    if (!newAdminEmail) return;
-    setAddingAdmin(true);
-
+  const addAdminByEmail = async (targetEmail: string) => {
     const { data, error } = await supabase.functions.invoke('manage-admin', {
-      body: { action: 'add_admin', email: newAdminEmail },
+      body: { action: 'add_admin', email: targetEmail },
     });
 
     if (error || data?.error) {
-      toast.error(data?.error || 'Failed to add admin');
+      toast.error(data?.error || 'Failed to promote user');
     } else {
-      toast.success('Super admin added');
-      setNewAdminEmail('');
-      setAdminDialogOpen(false);
+      toast.success(`${targetEmail} promoted to Super Admin`);
       await loadData();
     }
+  };
+
+  const addAdmin = async () => {
+    if (!newAdminEmail) return;
+    setAddingAdmin(true);
+    await addAdminByEmail(newAdminEmail);
+    setNewAdminEmail('');
+    setAdminDialogOpen(false);
     setAddingAdmin(false);
   };
 
@@ -403,24 +406,41 @@ export default function AdminCMS() {
           <TabsContent value="users" className="space-y-4">
             <h2 className="text-xl font-bold flex items-center gap-2"><Users className="w-5 h-5" /> All Registered Users ({users.length})</h2>
             <div className="space-y-2">
-              {users.map(u => (
-                <div key={u.id} className="rounded-xl border bg-card p-4 flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">{u.name}</p>
-                    <p className="text-xs text-muted-foreground">{u.email}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Joined {new Date(u.created_at).toLocaleDateString()}
-                    </p>
+              {users.map(u => {
+                const isCurrentAdmin = admins.some(a => a.user_id === u.id);
+                return (
+                  <div key={u.id} className="rounded-xl border bg-card p-4 flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{u.name}</p>
+                        {isCurrentAdmin && <Badge className="bg-primary/10 text-primary text-xs">Super Admin</Badge>}
+                      </div>
+                      <p className="text-xs text-muted-foreground">{u.email}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Joined {new Date(u.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {u.id !== user?.id && (
+                        <>
+                          {isCurrentAdmin ? (
+                            <Button size="sm" variant="outline" onClick={() => removeAdmin(u.email)}>
+                              Demote
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="secondary" onClick={() => addAdminByEmail(u.email)}>
+                              <Shield className="w-3 h-3 mr-1" /> Promote
+                            </Button>
+                          )}
+                          <Button size="sm" variant="destructive" onClick={() => deleteUser(u.id)}>
+                            <Trash2 className="w-3 h-3 mr-1" /> Delete
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {u.id !== user?.id && (
-                      <Button size="sm" variant="destructive" onClick={() => deleteUser(u.id)}>
-                        <Trash2 className="w-3 h-3 mr-1" /> Delete
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               {users.length === 0 && <p className="text-center py-8 text-muted-foreground">No users found</p>}
             </div>
           </TabsContent>
