@@ -4,9 +4,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useOwnerId } from '@/hooks/useOwnerId';
 import { useRealtimeDashboard } from '@/hooks/useRealtimeDashboard';
-import { Package, ShoppingCart, Users, CreditCard, TrendingUp, AlertTriangle, Loader2, Clock, Trophy, UserCircle } from 'lucide-react';
+import { Package, ShoppingCart, Users, CreditCard, TrendingUp, AlertTriangle, Clock, Trophy, UserCircle, RefreshCw, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface Product {
   id: string;
@@ -31,27 +33,85 @@ interface StaffPerformance {
   transactions: number;
 }
 
+interface DashboardSnapshot {
+  profile: { name: string; role: string } | null;
+  stats: {
+    totalSalesToday: number;
+    cashSales: number;
+    creditSales: number;
+    transactions: number;
+    totalProducts: number;
+    totalCustomers: number;
+    outstandingLoans: number;
+  };
+  lowStock: Product[];
+  recentActivities: RecentActivity[];
+  staffPerformance: StaffPerformance[];
+  cachedAt: number;
+}
+
+const emptyStats = {
+  totalSalesToday: 0,
+  cashSales: 0,
+  creditSales: 0,
+  transactions: 0,
+  totalProducts: 0,
+  totalCustomers: 0,
+  outstandingLoans: 0,
+};
+
+const cacheKey = (ownerId: string) => `dashboard-cache:${ownerId}`;
+
+function readCache(ownerId: string): DashboardSnapshot | null {
+  try {
+    const raw = localStorage.getItem(cacheKey(ownerId));
+    if (!raw) return null;
+    return JSON.parse(raw) as DashboardSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(ownerId: string, snap: DashboardSnapshot) {
+  try {
+    localStorage.setItem(cacheKey(ownerId), JSON.stringify(snap));
+  } catch {
+    /* ignore quota errors */
+  }
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
   const { ownerId, loading: ownerLoading } = useOwnerId();
-  const [loading, setLoading] = useState(true);
+  const [hasData, setHasData] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [profile, setProfile] = useState<{ name: string; role: string } | null>(null);
-  const [stats, setStats] = useState({
-    totalSalesToday: 0,
-    cashSales: 0,
-    creditSales: 0,
-    transactions: 0,
-    totalProducts: 0,
-    totalCustomers: 0,
-    outstandingLoans: 0,
-  });
+  const [stats, setStats] = useState(emptyStats);
   const [lowStock, setLowStock] = useState<Product[]>([]);
   const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
   const [staffPerformance, setStaffPerformance] = useState<StaffPerformance[]>([]);
 
+  // Hydrate from cache instantly whenever ownerId is known
+  useEffect(() => {
+    if (!ownerId) return;
+    const cached = readCache(ownerId);
+    if (cached) {
+      setProfile(cached.profile);
+      setStats(cached.stats);
+      setLowStock(cached.lowStock);
+      setRecentActivities(cached.recentActivities);
+      setStaffPerformance(cached.staffPerformance);
+      setLastUpdated(cached.cachedAt);
+      setHasData(true);
+    }
+  }, [ownerId]);
+
   const fetchData = useCallback(async () => {
     if (!user || !ownerId) return;
 
+    setRefreshing(true);
     try {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -93,7 +153,13 @@ export default function Dashboard() {
           .limit(5),
       ]);
 
-      if (profileRes.data) setProfile(profileRes.data);
+      const firstError =
+        profileRes.error || salesRes.error || productsCountRes.error ||
+        customersCountRes.error || loansRes.error || productsDataRes.error ||
+        recentSalesRes.error || recentStockRes.error;
+      if (firstError) throw firstError;
+
+      const nextProfile = profileRes.data ?? null;
 
       const sales = salesRes.data || [];
       const totalSalesToday = sales.reduce((sum, s) => sum + Number(s.total), 0);
@@ -108,7 +174,7 @@ export default function Dashboard() {
         existing.transactions += 1;
         perfMap.set(name, existing);
       });
-      setStaffPerformance(Array.from(perfMap.values()).sort((a, b) => b.revenue - a.revenue));
+      const nextStaff = Array.from(perfMap.values()).sort((a, b) => b.revenue - a.revenue);
 
       const outstandingLoans = (loansRes.data || []).reduce((sum, l) => sum + Number(l.balance), 0);
       const lowStockItems = (productsDataRes.data || []).filter(p => p.quantity <= p.low_stock_level);
@@ -135,9 +201,9 @@ export default function Dashboard() {
         });
       });
       activities.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-      setRecentActivities(activities.slice(0, 10));
+      const nextActivities = activities.slice(0, 10);
 
-      setStats({
+      const nextStats = {
         totalSalesToday,
         cashSales,
         creditSales,
@@ -145,33 +211,58 @@ export default function Dashboard() {
         totalProducts: productsCountRes.count || 0,
         totalCustomers: customersCountRes.count || 0,
         outstandingLoans,
-      });
+      };
+
+      setProfile(nextProfile);
+      setStats(nextStats);
       setLowStock(lowStockItems);
-    } catch (err) {
+      setRecentActivities(nextActivities);
+      setStaffPerformance(nextStaff);
+      setHasData(true);
+      setError(null);
+      const cachedAt = Date.now();
+      setLastUpdated(cachedAt);
+
+      writeCache(ownerId, {
+        profile: nextProfile,
+        stats: nextStats,
+        lowStock: lowStockItems,
+        recentActivities: nextActivities,
+        staffPerformance: nextStaff,
+        cachedAt,
+      });
+    } catch (err: any) {
       console.error('Dashboard fetch error:', err);
+      setError(err?.message || 'Failed to load dashboard data.');
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
   }, [user, ownerId]);
-
-  useEffect(() => {
-    if (!ownerLoading && !ownerId) setLoading(false);
-  }, [ownerLoading, ownerId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   useRealtimeDashboard(ownerId, fetchData);
 
-  if (ownerLoading || (loading && ownerId)) {
-
+  // Full error state when we have nothing to show
+  if (!ownerLoading && ownerId && error && !hasData) {
     return (
       <Layout>
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <div className="flex flex-col items-center justify-center h-64 text-center gap-4 animate-fade-in">
+          <AlertCircle className="w-10 h-10 text-destructive" />
+          <div>
+            <h2 className="text-lg font-semibold">Couldn't load your dashboard</h2>
+            <p className="text-sm text-muted-foreground max-w-md mt-1">{error}</p>
+          </div>
+          <Button onClick={fetchData} disabled={refreshing}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            Try again
+          </Button>
         </div>
       </Layout>
     );
   }
+
+  const showSkeleton = (ownerLoading || (!hasData && refreshing));
 
   const statCards = [
     { label: "Today's Sales", value: `Le ${stats.totalSalesToday.toLocaleString()}`, icon: TrendingUp, accent: true },
@@ -187,26 +278,64 @@ export default function Dashboard() {
   return (
     <Layout>
       <div className="animate-fade-in space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">Welcome back, {profile?.name || 'User'}</h1>
-          <p className="text-muted-foreground text-sm">
-            {new Date().toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-          </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            {showSkeleton ? (
+              <>
+                <Skeleton className="h-7 w-56 mb-2" />
+                <Skeleton className="h-4 w-72" />
+              </>
+            ) : (
+              <>
+                <h1 className="text-2xl font-bold">Welcome back, {profile?.name || 'User'}</h1>
+                <p className="text-muted-foreground text-sm">
+                  {new Date().toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                  {lastUpdated && (
+                    <span className="ml-2 text-xs">· Updated {format(new Date(lastUpdated), 'HH:mm')}</span>
+                  )}
+                </p>
+              </>
+            )}
+          </div>
+          <Button variant="ghost" size="sm" onClick={fetchData} disabled={refreshing} className="shrink-0">
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline ml-2">Refresh</span>
+          </Button>
         </div>
+
+        {error && hasData && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertCircle size={16} className="text-destructive shrink-0" />
+              <p className="text-sm truncate">Showing cached data — refresh failed: {error}</p>
+            </div>
+            <Button size="sm" variant="outline" onClick={fetchData} disabled={refreshing}>
+              <RefreshCw className={`w-3 h-3 mr-1 ${refreshing ? 'animate-spin' : ''}`} />
+              Retry
+            </Button>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
-          {statCards.map(stat => (
-            <div key={stat.label} className={`rounded-xl border p-4 ${stat.accent ? 'bg-accent/10 border-accent/30' : 'bg-card'}`}>
-              <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                <stat.icon size={16} className={stat.accent ? 'text-accent' : ''} />
-                <span className="text-xs">{stat.label}</span>
-              </div>
-              <p className={`text-xl font-bold ${stat.accent ? 'text-accent' : ''}`}>{stat.value}</p>
-            </div>
-          ))}
+          {showSkeleton
+            ? Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="rounded-xl border p-4 bg-card">
+                  <Skeleton className="h-4 w-20 mb-3" />
+                  <Skeleton className="h-6 w-24" />
+                </div>
+              ))
+            : statCards.map(stat => (
+                <div key={stat.label} className={`rounded-xl border p-4 ${stat.accent ? 'bg-accent/10 border-accent/30' : 'bg-card'}`}>
+                  <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                    <stat.icon size={16} className={stat.accent ? 'text-accent' : ''} />
+                    <span className="text-xs">{stat.label}</span>
+                  </div>
+                  <p className={`text-xl font-bold ${stat.accent ? 'text-accent' : ''}`}>{stat.value}</p>
+                </div>
+              ))}
         </div>
 
-        {stats.outstandingLoans > 0 && (
+        {!showSkeleton && stats.outstandingLoans > 0 && (
           <div className="rounded-xl border border-warning/30 bg-warning/5 p-4">
             <div className="flex items-center gap-2 mb-1">
               <CreditCard size={16} className="text-warning" />
@@ -216,8 +345,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Staff Performance - owner only */}
-        {isOwner && staffPerformance.length > 0 && (
+        {!showSkeleton && isOwner && staffPerformance.length > 0 && (
           <div className="rounded-xl border bg-card p-4">
             <div className="flex items-center gap-2 mb-3">
               <Trophy size={16} className="text-accent" />
@@ -248,7 +376,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {lowStock.length > 0 && (
+        {!showSkeleton && lowStock.length > 0 && (
           <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
             <div className="flex items-center gap-2 mb-2">
               <AlertTriangle size={16} className="text-destructive" />
@@ -265,8 +393,23 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Recent Activity Feed */}
-        {recentActivities.length > 0 && (
+        {showSkeleton ? (
+          <div className="rounded-xl border bg-card p-4 space-y-3">
+            <Skeleton className="h-4 w-32" />
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex items-center justify-between py-2">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <Skeleton className="h-2 w-2 rounded-full" />
+                  <div className="flex-1 space-y-1">
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
+                </div>
+                <Skeleton className="h-4 w-16" />
+              </div>
+            ))}
+          </div>
+        ) : recentActivities.length > 0 && (
           <div className="rounded-xl border bg-card p-4">
             <div className="flex items-center gap-2 mb-3">
               <Clock size={16} className="text-accent" />
